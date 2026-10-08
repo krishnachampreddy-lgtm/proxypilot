@@ -14,6 +14,7 @@ const LeaveBody = z
     text: z.string().trim().max(500, 'Keep it under 500 characters').optional().default(''),
     date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Pick a valid date').optional(),
     periods: z.array(z.number().int().min(1).max(6)).max(6).optional(),
+    session: z.enum(['full', 'morning', 'afternoon', 'periods']).optional(),
   })
   .refine((b) => b.date || b.text.length >= 5, { message: 'Pick a date on the calendar or describe your leave' });
 
@@ -28,7 +29,7 @@ router.post('/', validate(LeaveBody), async (req, res) => {
   const scheduleText = myClasses.map((c) => `${c.day} P${c.period} ${c.class_name} ${c.subject}`).join('; ');
 
   // 1. Read the message; a date picked on the calendar always wins
-  const { text, date, periods } = req.body;
+  const { text, date, periods, session } = req.body;
   if (date && (date < today || date > addDays(today, 120))) {
     return res.status(400).json({ error: 'Pick a date between today and the next 4 months.' });
   }
@@ -44,9 +45,13 @@ router.post('/', validate(LeaveBody), async (req, res) => {
     return res.status(409).json({ error: `You already applied leave for ${prettyDate(parsed.date)}.` });
   }
 
-  // 2. Match to the timetable
+  // 2. Match to the timetable: full day, a session, or chosen periods
   let affected = myClasses.filter((c) => c.day === day);
-  if (parsed.periods.length) affected = affected.filter((c) => parsed.periods.includes(c.period));
+  let leaveType = session || (parsed.periods.length ? 'periods' : 'full');
+  if (leaveType === 'morning') affected = affected.filter((c) => c.period <= 4);
+  else if (leaveType === 'afternoon') affected = affected.filter((c) => c.period >= 5);
+  else if (leaveType === 'periods' && parsed.periods.length) affected = affected.filter((c) => parsed.periods.includes(c.period));
+  else leaveType = 'full';
   if (affected.length === 0) {
     return res.status(400).json({
       error: `You have no classes on ${prettyDate(parsed.date)}${parsed.periods.length ? ` in period ${parsed.periods.join(', ')}` : ''}. No proxy needed!`,
@@ -60,6 +65,7 @@ router.post('/', validate(LeaveBody), async (req, res) => {
     reason: parsed.reason,
     periods: affected.map((c) => c.period),
     aiUsed: parsed.aiUsed,
+    leaveType,
   });
 
   // 3. Goes to the HOD first; cover is arranged only after approval
@@ -71,6 +77,7 @@ router.post('/', validate(LeaveBody), async (req, res) => {
       prettyDate: prettyDate(parsed.date),
       periods: leave.periods,
       reason: parsed.reason,
+      leaveType,
     },
   });
 });
@@ -99,6 +106,7 @@ router.get('/mine', async (req, res) => {
       rawText: l.raw_text,
       reason: l.reason,
       periods: l.periods,
+      leaveType: l.leave_type,
       status: l.status,
       hodNote: l.hod_note,
       proxies: proxies.filter((p) => p.leave === l.id),

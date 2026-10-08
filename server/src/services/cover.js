@@ -1,7 +1,7 @@
-import { Proxies, Timetable, Users } from '../db.js';
+import { Proxies, Timetable, Users, Leaves, q } from '../db.js';
 import { rankCandidates } from './matching.js';
 import { explainAndHandover, templateNote } from './ai.js';
-import { weekday } from './dates.js';
+import { weekday, PERIOD_TIMES } from './dates.js';
 
 /**
  * Runs after the HOD approves a leave:
@@ -50,6 +50,13 @@ export async function arrangeCover(leave) {
     });
   }
 
+  // a class nobody of that subject can take -> the whole leave is declined
+  const stuck = proxies.find((p) => p.status === 'uncovered');
+  if (stuck) {
+    await declineForNoCover(leave.id, stuck, 'free');
+    return [];
+  }
+
   const notes = await explainAndHandover(noteInput);
   for (const [i, proxy] of proxies.entries()) {
     const note = notes[String(proxy.id)] || templateNote(noteInput[i]);
@@ -58,4 +65,21 @@ export async function arrangeCover(leave) {
     await Proxies.save(proxy);
   }
   return proxies;
+}
+
+/**
+ * No teacher of the subject could take a class (none free, or all declined):
+ * decline the leave with a clear reason and cancel any cover already arranged for it.
+ */
+export async function declineForNoCover(leaveId, proxy, why = 'declined') {
+  const leave = await Leaves.byId(leaveId);
+  if (!leave || leave.status === 'declined') return;
+  const where = `P${proxy.period} (${PERIOD_TIMES[proxy.period]}) · ${proxy.class_name}`;
+  const note =
+    why === 'free'
+      ? `Declined automatically: no other ${proxy.subject} teacher is free to take ${where}.`
+      : `Declined automatically: none of the ${proxy.subject} teachers could take ${where}.`;
+  await Leaves.decide(leaveId, 'declined', note);
+  await q('DELETE FROM proxies WHERE leave_id = $1', [leaveId]);
+  return note;
 }

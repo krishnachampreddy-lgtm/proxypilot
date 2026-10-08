@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import api, { errorText } from '../api';
 import { Button, Card, Empty, ErrorBox, StatusBadge } from '../components/ui.jsx';
 import LeaveCalendar, { dayKey } from '../components/LeaveCalendar.jsx';
+import { leaveTypeLabel } from '../leaveType.js';
 
 const EXAMPLES = [
   'Down with fever, cannot come tomorrow. Please arrange proxies for my classes.',
@@ -29,6 +30,7 @@ export default function Faculty() {
   const [schedule, setSchedule] = useState(null);
   const [date, setDate] = useState(null);
   const [skip, setSkip] = useState([]); // periods the teacher un-ticked
+  const [session, setSession] = useState('full'); // full | morning | afternoon | periods
 
   const load = useCallback(async () => {
     try {
@@ -56,14 +58,17 @@ export default function Faculty() {
       const body = { text };
       if (date) {
         body.date = date;
-        body.periods = dayClasses.map((c) => c.period).filter((p) => !skip.includes(p));
-        if (!body.periods.length) throw { response: { data: { error: 'Select at least one class to cover.' } } };
+        body.session = session;
+        const chosen = sessionClasses.map((c) => c.period).filter((p) => session !== 'periods' || !skip.includes(p));
+        if (!chosen.length) throw { response: { data: { error: 'Select at least one class to cover.' } } };
+        if (session === 'periods') body.periods = chosen;
       }
       const { data } = await api.post('/leaves', body);
       setResult(data);
       setText('');
       setDate(null);
       setSkip([]);
+      setSession('full');
       load();
     } catch (err) {
       setError(errorText(err));
@@ -73,6 +78,7 @@ export default function Faculty() {
   };
 
   const dayClasses = date && schedule ? schedule.classes.filter((c) => c.day === dayKey(date)).sort((a, b) => a.period - b.period) : [];
+  const sessionClasses = dayClasses.filter((c) => (session === 'morning' ? c.period <= 4 : session === 'afternoon' ? c.period >= 5 : true));
   const pretty = date ? new Date(`${date}T00:00:00Z`).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' }) : '';
 
   const respond = async (id, action) => {
@@ -150,14 +156,40 @@ export default function Faculty() {
                   <p className="mt-1 text-sm text-muted">You have no classes this day, so nothing needs covering.</p>
                 ) : (
                   <>
-                    <p className="mt-1 text-xs text-muted">Classes to cover (tap to leave one out):</p>
+                    <p className="mt-2 font-mono text-[11px] uppercase tracking-wider text-muted">Leave for</p>
+                    <div className="mt-1 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                      {[
+                        ['full', 'Full day', 'All classes'],
+                        ['morning', 'Morning', 'P1 – P4'],
+                        ['afternoon', 'Afternoon', 'P5 – P6'],
+                        ['periods', 'Choose periods', 'Pick below'],
+                      ].map(([key, label, hint]) => (
+                        <button
+                          type="button"
+                          key={key}
+                          onClick={() => { setSession(key); setSkip([]); }}
+                          className={`rounded-md border px-3 py-2 text-left transition ${session === key ? 'border-brass bg-brass-soft text-ink' : 'border-line bg-white text-ink/80 hover:border-ink/40'}`}
+                        >
+                          <span className="block text-sm font-semibold">{label}</span>
+                          <span className="block font-mono text-[10px] uppercase tracking-wide text-muted">{hint}</span>
+                        </button>
+                      ))}
+                    </div>
+                    <p className="mt-3 text-xs text-muted">
+                      {sessionClasses.length === 0
+                        ? 'You have no classes in this session, so nothing needs covering.'
+                        : session === 'periods'
+                          ? 'Classes to cover (tap to leave one out):'
+                          : 'These classes will need cover:'}
+                    </p>
                     <div className="mt-2 flex flex-wrap gap-2">
-                      {dayClasses.map((c) => {
-                        const on = !skip.includes(c.period);
+                      {sessionClasses.map((c) => {
+                        const on = session !== 'periods' || !skip.includes(c.period);
                         return (
                           <button
                             type="button"
                             key={c.period}
+                            disabled={session !== 'periods'}
                             onClick={() => setSkip((s) => (on ? [...s, c.period] : s.filter((p) => p !== c.period)))}
                             className={`rounded-md border px-2.5 py-1.5 text-left text-xs transition ${on ? 'border-ink bg-ink text-paper' : 'border-line bg-white text-muted line-through'}`}
                           >
@@ -195,7 +227,7 @@ export default function Faculty() {
             </div>
 
             <ErrorBox text={error} />
-            <Button type="submit" disabled={busy || (date ? dayClasses.length === 0 : text.trim().length < 5)}>
+            <Button type="submit" disabled={busy || (date ? sessionClasses.length === 0 : text.trim().length < 5)}>
               {busy ? 'Arranging cover…' : date ? 'Apply leave for this date' : 'Submit leave'}
             </Button>
           </form>
@@ -204,7 +236,7 @@ export default function Faculty() {
             <div className="mt-5 rounded-md border border-brass bg-brass-soft/60 p-4">
               <p className="font-display text-lg font-medium text-ink">Sent to the HOD for approval</p>
               <p className="mt-1 text-sm text-ink/80">
-                <b>{result.understood.prettyDate}</b> · period {result.understood.periods.join(', ')} · {result.understood.reason}
+                <b>{result.understood.prettyDate}</b> · {leaveTypeLabel(result.understood.leaveType, result.understood.periods)} · {result.understood.reason}
               </p>
               <p className="mt-2 text-xs text-muted">Once the HOD approves, substitutes are arranged for your classes. You can follow it under “My leaves”.</p>
             </div>
@@ -222,11 +254,12 @@ export default function Faculty() {
                     <span className="font-semibold text-ink">{l.prettyDate}</span>
                     <LeaveStatus status={l.status} />
                   </div>
-                  <p className="mt-1 text-xs italic text-muted">“{l.rawText}” · {l.reason}</p>
-                  {l.status === 'pending' && <p className="mt-2 text-sm text-ink/80">Waiting for the HOD to approve. Period {l.periods?.join(', ')}.</p>}
+                  <p className="mt-1 text-sm font-medium text-ink/80">{leaveTypeLabel(l.leaveType, l.periods)}</p>
+                  <p className="mt-0.5 text-xs italic text-muted">“{l.rawText}” · {l.reason}</p>
+                  {l.status === 'pending' && <p className="mt-2 text-sm text-ink/80">Waiting for the HOD to approve.</p>}
                   {l.status === 'declined' && (
                     <div className="mt-2 rounded border border-clay/30 bg-clay-soft px-3 py-2 text-sm text-clay">
-                      <b>HOD’s reason:</b> {l.hodNote}
+                      <b>{l.hodNote?.startsWith('Declined automatically') ? 'Reason:' : 'HOD’s reason:'}</b> {l.hodNote?.replace('Declined automatically: ', '')}
                     </div>
                   )}
                   <ul className="mt-2 divide-y divide-line/70">

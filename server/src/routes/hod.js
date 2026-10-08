@@ -4,6 +4,7 @@ import { Proxies, Leaves, Users, Timetable, hydrateProxies } from '../db.js';
 import { requireAuth, requireRole, validate } from '../middleware/auth.js';
 import { arrangeCover } from '../services/cover.js';
 import { advance } from '../services/matching.js';
+import { declineForNoCover } from '../services/cover.js';
 import { hodSummary } from '../services/ai.js';
 import { todayIST, monthStart, prettyDate, weekday, PERIOD_TIMES } from '../services/dates.js';
 import { seedDatabase } from '../seedData.js';
@@ -34,6 +35,8 @@ async function buildOverview() {
       prettyDate: prettyDate(l.date),
       reason: l.reason,
       rawText: l.raw_text,
+      leaveType: l.leave_type,
+      periods: l.periods,
       facultyName: l.faculty_name,
       appliedAt: l.created_at,
       classes,
@@ -94,6 +97,8 @@ router.post('/leaves/:id/decide', validate(DecideBody), async (req, res) => {
   }
   const approved = await Leaves.decide(leave.id, 'approved', req.body.note || null);
   const proxies = await arrangeCover(approved);
+  const after = await Leaves.byId(leave.id);
+  if (after.status === 'declined') return res.json({ ok: true, status: 'declined', note: after.hod_note });
   res.json({ ok: true, status: 'approved', proxies: proxies.length });
 });
 
@@ -103,6 +108,10 @@ router.post('/proxies/:id/skip', async (req, res) => {
   if (!proxy || proxy.status !== 'pending') return res.status(409).json({ error: 'Request is not pending' });
   advance(proxy, 'no-reply');
   await Proxies.save(proxy);
+  if (proxy.status === 'uncovered') {
+    const note = await declineForNoCover(proxy.leave_id, proxy, 'declined');
+    return res.json({ ok: true, leaveDeclined: true, note });
+  }
   res.json({ ok: true });
 });
 

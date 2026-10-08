@@ -102,9 +102,9 @@ export const Leaves = {
   create: async (l) =>
     (
       await q(
-        `INSERT INTO leaves (faculty_id, date, raw_text, reason, periods, ai_used, status)
-         VALUES ($1,$2,$3,$4,$5,$6,'pending') RETURNING *`,
-        [l.facultyId, l.date, l.rawText, l.reason, l.periods, l.aiUsed]
+        `INSERT INTO leaves (faculty_id, date, raw_text, reason, periods, ai_used, status, leave_type)
+         VALUES ($1,$2,$3,$4,$5,$6,'pending',$7) RETURNING *`,
+        [l.facultyId, l.date, l.rawText, l.reason, l.periods, l.aiUsed, l.leaveType || 'full']
       )
     )[0],
   byId: async (id) => (await q('SELECT * FROM leaves WHERE id = $1', [id]))[0],

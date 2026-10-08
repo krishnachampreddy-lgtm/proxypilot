@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { Proxies, hydrateProxies } from '../db.js';
 import { requireAuth, requireRole, validate } from '../middleware/auth.js';
 import { advance } from '../services/matching.js';
+import { declineForNoCover } from '../services/cover.js';
 import { todayIST, prettyDate, PERIOD_TIMES } from '../services/dates.js';
 
 const router = Router();
@@ -36,6 +37,11 @@ router.post('/:id/respond', validate(RespondBody), async (req, res) => {
     advance(proxy, 'declined'); // automatically goes to the next best teacher
   }
   await Proxies.save(proxy);
+  if (proxy.status === 'uncovered') {
+    // every teacher of this subject said no -> the leave cannot go ahead
+    await declineForNoCover(proxy.leave_id, proxy, 'declined');
+    return res.json({ proxy: null, leaveDeclined: true });
+  }
   const [updated] = await hydrateProxies([proxy]);
   res.json({ proxy: updated });
 });

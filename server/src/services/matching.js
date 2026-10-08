@@ -6,8 +6,7 @@ const MAX_PERIODS_PER_DAY = 5;
 /**
  * Rank every possible substitute for one class.
  * Rules:
- *   must  - free in that period, not on leave that day, under the daily limit
- *   +50   - teaches the same subject
+ *   must  - teaches the same subject, free in that period, not on leave that day, under the daily limit
  *   +20   - already teaches that class
  *   +10   - minus 4 per proxy taken this month  (fairness)
  *   -5    - per period already busy that day     (workload)
@@ -32,6 +31,8 @@ export async function rankCandidates({ date, day, period, className, subject, ab
   const ranked = [];
   for (const f of faculty) {
     if (f.id === absentFacultyId || busy.has(f.id) || leave.has(f.id) || takenThisPeriod.has(f.id)) continue;
+    // only teachers of the same subject can cover the class
+    if (!f.subjects?.includes(subject)) continue;
 
     const ownPeriods = await Timetable.countFacultyDay(day, f.id);
     const proxyPeriods = proxiesToday.filter((p) => p.assigned_to === f.id).length;
@@ -39,11 +40,8 @@ export async function rankCandidates({ date, day, period, className, subject, ab
     if (load >= MAX_PERIODS_PER_DAY) continue;
 
     const factors = [`free in period ${period}`];
-    let score = 0;
-    if (f.subjects?.includes(subject)) {
-      score += 50;
-      factors.push(`teaches ${subject}`);
-    }
+    let score = 50;
+    factors.push(`teaches ${subject}`);
     if (teachesClass.has(f.id)) {
       score += 20;
       factors.push(`knows ${className}`);

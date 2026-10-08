@@ -76,7 +76,7 @@ export async function sendCode(email, purpose) {
     subject: SUBJECT[purpose],
     text: `${LINE[purpose]}\n\n${code}\n\nIt expires in ${CODE_MINUTES} minutes. If you did not ask for this, ignore this email.`,
     html: `<div style="font-family:Arial,sans-serif;max-width:420px;margin:auto;padding:24px">
-      <h2 style="color:#4f46e5;margin:0 0 12px">ProxyPilot</h2>
+      <h2 style="color:#13233a;margin:0 0 12px">ProxyPilot</h2>
       <p>${LINE[purpose]}</p>
       <p style="font-size:32px;font-weight:bold;letter-spacing:8px;margin:16px 0">${code}</p>
       <p style="color:#64748b;font-size:13px">It expires in ${CODE_MINUTES} minutes. If you did not ask for this, ignore this email.</p>
@@ -85,6 +85,15 @@ export async function sendCode(email, purpose) {
   if (useBrevo()) await sendViaBrevo(mail);
   else await (await getTransporter()).sendMail({ ...mail, from: `"ProxyPilot" <${fromEmail()}>` });
   return { ok: true };
+}
+
+/** Send any email (used for proxy request alerts). Quietly does nothing if email is not set up. */
+export async function sendEmail({ to, subject, text, html }) {
+  if (!emailEnabled() || !to) return false;
+  const mail = { to, subject, text, html };
+  if (useBrevo()) await sendViaBrevo(mail);
+  else await (await getTransporter()).sendMail({ ...mail, from: `"ProxyPilot" <${fromEmail()}>` });
+  return true;
 }
 
 /** Check a code. Marks it used on success; counts failed attempts (max 5). */

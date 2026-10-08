@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import api, { errorText } from '../api';
 import { Button, Card, Empty, ErrorBox, StatusBadge } from '../components/ui.jsx';
+import LeaveCalendar, { dayKey } from '../components/LeaveCalendar.jsx';
 
 const EXAMPLES = [
   'Down with fever, cannot come tomorrow. Please arrange proxies for my classes.',
@@ -32,12 +33,16 @@ export default function Faculty() {
   const [result, setResult] = useState(null);
   const [leaves, setLeaves] = useState([]);
   const [requests, setRequests] = useState({ waiting: [], accepted: [] });
+  const [schedule, setSchedule] = useState(null);
+  const [date, setDate] = useState(null);
+  const [skip, setSkip] = useState([]); // periods the teacher un-ticked
 
   const load = useCallback(async () => {
     try {
-      const [l, r] = await Promise.all([api.get('/leaves/mine'), api.get('/proxies/mine')]);
+      const [l, r, s] = await Promise.all([api.get('/leaves/mine'), api.get('/proxies/mine'), api.get('/leaves/schedule')]);
       setLeaves(l.data.leaves);
       setRequests(r.data);
+      setSchedule(s.data);
     } catch (err) {
       setError(errorText(err));
     }
@@ -55,9 +60,17 @@ export default function Faculty() {
     setError('');
     setResult(null);
     try {
-      const { data } = await api.post('/leaves', { text });
+      const body = { text };
+      if (date) {
+        body.date = date;
+        body.periods = dayClasses.map((c) => c.period).filter((p) => !skip.includes(p));
+        if (!body.periods.length) throw { response: { data: { error: 'Select at least one class to cover.' } } };
+      }
+      const { data } = await api.post('/leaves', body);
       setResult(data);
       setText('');
+      setDate(null);
+      setSkip([]);
       load();
     } catch (err) {
       setError(errorText(err));
@@ -65,6 +78,9 @@ export default function Faculty() {
       setBusy(false);
     }
   };
+
+  const dayClasses = date && schedule ? schedule.classes.filter((c) => c.day === dayKey(date)).sort((a, b) => a.period - b.period) : [];
+  const pretty = date ? new Date(`${date}T00:00:00Z`).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' }) : '';
 
   const respond = async (id, action) => {
     try {
@@ -78,25 +94,75 @@ export default function Faculty() {
   return (
     <div className="grid gap-6 lg:grid-cols-5">
       <div className="space-y-6 lg:col-span-3">
-        <Card title="Apply for leave" subtitle="Type it like a WhatsApp message — ProxyPilot does the rest.">
-          <form onSubmit={submitLeave} className="space-y-3">
-            <textarea
-              rows={3}
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              placeholder="e.g. Down with fever, can't come tomorrow…"
-              className="w-full rounded-md border border-line p-3 text-sm outline-none focus:border-brass"
-            />
-            <div className="flex flex-wrap gap-2">
-              {EXAMPLES.map((ex) => (
-                <button type="button" key={ex} onClick={() => setText(ex)} className="rounded-full bg-paper px-3 py-1 text-xs text-ink/80 hover:bg-paper-2">
-                  {ex.length > 45 ? ex.slice(0, 45) + '…' : ex}
-                </button>
-              ))}
+        <Card title="Apply for leave" subtitle="Pick a date on the calendar, or just write it like a WhatsApp message.">
+          <form onSubmit={submitLeave} className="space-y-4">
+            {schedule && (
+              <LeaveCalendar
+                today={schedule.today}
+                classes={schedule.classes}
+                leaveDates={schedule.leaveDates}
+                value={date}
+                onChange={(d) => { setDate(d); setSkip([]); setError(''); }}
+              />
+            )}
+
+            {date && (
+              <div className="rounded-md border border-line bg-paper/60 p-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-semibold text-ink">{pretty}</p>
+                  <button type="button" onClick={() => setDate(null)} className="text-xs text-brass-2 hover:underline">Clear date</button>
+                </div>
+                {dayClasses.length === 0 ? (
+                  <p className="mt-1 text-sm text-muted">You have no classes this day, so nothing needs covering.</p>
+                ) : (
+                  <>
+                    <p className="mt-1 text-xs text-muted">Classes to cover (tap to leave one out):</p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {dayClasses.map((c) => {
+                        const on = !skip.includes(c.period);
+                        return (
+                          <button
+                            type="button"
+                            key={c.period}
+                            onClick={() => setSkip((s) => (on ? [...s, c.period] : s.filter((p) => p !== c.period)))}
+                            className={`rounded-md border px-2.5 py-1.5 text-left text-xs transition ${on ? 'border-ink bg-ink text-paper' : 'border-line bg-white text-muted line-through'}`}
+                          >
+                            <span className="font-mono">P{c.period} · {c.time}</span>
+                            <span className="block font-medium">{c.className} · {c.subject}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+
+            <div>
+              <label className="mb-1 block font-mono text-[11px] uppercase tracking-wider text-muted">
+                {date ? 'Reason (optional)' : 'Or describe your leave'}
+              </label>
+              <textarea
+                rows={date ? 2 : 3}
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                placeholder={date ? 'e.g. Family function' : "e.g. Down with fever, can't come tomorrow…"}
+                className="w-full rounded-md border border-line p-3 text-sm outline-none focus:border-ink"
+              />
+              {!date && (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {EXAMPLES.map((ex) => (
+                    <button type="button" key={ex} onClick={() => setText(ex)} className="rounded-full bg-paper px-3 py-1 text-xs text-ink/80 hover:bg-paper-2">
+                      {ex.length > 45 ? ex.slice(0, 45) + '…' : ex}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
+
             <ErrorBox text={error} />
-            <Button type="submit" disabled={busy || text.trim().length < 5}>
-              {busy ? 'Arranging cover…' : 'Submit leave'}
+            <Button type="submit" disabled={busy || (date ? dayClasses.length === 0 : text.trim().length < 5)}>
+              {busy ? 'Arranging cover…' : date ? 'Apply leave for this date' : 'Submit leave'}
             </Button>
           </form>
 

@@ -4,7 +4,7 @@ import api, { errorText } from '../api';
 import { Logo } from '../components/Layout.jsx';
 import { Button, ErrorBox } from '../components/ui.jsx';
 
-const input = 'w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500';
+const input = 'w-full rounded-lg border border-line px-3 py-2 text-sm outline-none focus:border-brass';
 
 // First sign-in with Google / Gmail: choose faculty or student
 export default function Welcome() {
@@ -37,19 +37,19 @@ export default function Welcome() {
 
   return (
     <div className="flex min-h-screen items-center justify-center p-6">
-      <form onSubmit={save} className="w-full max-w-md space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+      <form onSubmit={save} className="w-full max-w-md space-y-4 rounded-lg border border-line bg-white p-6 shadow-sm">
         <Logo />
         <div className="flex items-center gap-3">
           {user.avatar && <img src={user.avatar} alt="" className="h-10 w-10 rounded-full" referrerPolicy="no-referrer" />}
           <div>
-            <h2 className="text-lg font-semibold text-slate-900">Welcome! One last step</h2>
-            <p className="text-sm text-slate-500">{user.email}</p>
+            <h2 className="font-display text-xl font-medium text-ink">Welcome — one last step</h2>
+            <p className="text-sm text-muted">{user.email}</p>
           </div>
         </div>
         <input className={input} value={name} onChange={(e) => setName(e.target.value)} placeholder="Full name" />
         <div className="grid grid-cols-2 gap-2">
           {['faculty', 'student'].map((r) => (
-            <button type="button" key={r} onClick={() => setRole(r)} className={`rounded-lg border px-3 py-2 text-sm font-medium ${role === r ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-slate-300 text-slate-600'}`}>
+            <button type="button" key={r} onClick={() => setRole(r)} className={`rounded-lg border px-3 py-2 text-sm font-medium ${role === r ? 'border-brass bg-brass-soft/60 text-brass-2' : 'border-line text-ink/80'}`}>
               I'm {r === 'faculty' ? 'faculty' : 'a student'}
             </button>
           ))}
@@ -63,7 +63,7 @@ export default function Welcome() {
         )}
         <ErrorBox text={error} />
         <Button type="submit" disabled={busy} className="w-full">{busy ? 'Saving…' : 'Continue'}</Button>
-        <button type="button" onClick={logout} className="w-full text-sm text-slate-500 hover:underline">Use a different account</button>
+        <button type="button" onClick={logout} className="w-full text-sm text-muted hover:underline">Use a different account</button>
       </form>
     </div>
   );

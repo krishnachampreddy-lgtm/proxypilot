@@ -26,16 +26,6 @@ export function StatusBadge({ status }) {
   return <span className={`inline-block rounded px-2 py-0.5 font-mono text-[11px] font-medium uppercase tracking-wide ${cls}`}>{label}</span>;
 }
 
-export function AiBadge({ used = true }) {
-  return used ? (
-    <span className="inline-flex items-center gap-1 rounded border border-brass/40 bg-brass-soft px-1.5 py-0.5 font-mono text-[10px] font-medium uppercase tracking-wider text-brass-2">
-      ◆ Gemini
-    </span>
-  ) : (
-    <span className="rounded border border-line bg-paper-2 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider text-muted">rules</span>
-  );
-}
-
 export function ErrorBox({ text }) {
   if (!text) return null;
   return <div className="rounded-md border border-clay/30 bg-clay-soft px-3 py-2 text-sm text-clay">{text}</div>;

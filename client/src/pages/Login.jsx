@@ -1,10 +1,9 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useAuth } from '../auth.jsx';
 import api, { errorText } from '../api';
 import { Logo } from '../components/Layout.jsx';
 import AmbientScene from '../components/AmbientScene.jsx';
 import { Button, ErrorBox } from '../components/ui.jsx';
-import GoogleButton from '../components/GoogleButton.jsx';
 
 const DEMO = [
   { label: 'Dr. Anita Mehta', role: 'Faculty · applies leave', email: 'mehta@college.edu' },
@@ -29,7 +28,6 @@ function Avatar({ name, src }) {
 
 export default function Login() {
   const { login, setSession, saved, quickLogin, forget } = useAuth();
-  const [config, setConfig] = useState({ googleClientId: null, emailEnabled: false });
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
@@ -37,10 +35,6 @@ export default function Login() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    api.get('/auth/config').then((r) => setConfig(r.data)).catch(() => {});
-  }, []);
 
   const run = async (fn) => {
     setBusy(true);
@@ -53,12 +47,6 @@ export default function Login() {
       setBusy(false);
     }
   };
-
-  const onGoogle = useCallback(
-    (credential) => run(async () => setSession((await api.post('/auth/google', { credential })).data)),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    []
-  );
 
   const sendOtp = () =>
     run(async () => {
@@ -176,14 +164,6 @@ export default function Login() {
               )}
             </form>
 
-            {config.googleClientId && !codeSent && (
-              <>
-                <div className="flex items-center gap-3 font-mono text-[10px] uppercase tracking-widest text-muted">
-                  <div className="h-px flex-1 bg-line" /> or <div className="h-px flex-1 bg-line" />
-                </div>
-                <GoogleButton clientId={config.googleClientId} onCredential={onGoogle} onError={setError} />
-              </>
-            )}
           </div>
 
           <div className="mt-5">

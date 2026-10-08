@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-// Backend URL comes from .env (VITE_API_URL). The AI key is never in the frontend.
+// Backend URL comes from .env (VITE_API_URL).
 // Same website on Netlify, so the default is just /api. For local dev set VITE_API_URL=http://localhost:5000
 const api = axios.create({ baseURL: `${import.meta.env.VITE_API_URL || ''}/api` });
 

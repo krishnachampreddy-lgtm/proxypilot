@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import api, { errorText } from '../api';
-import { AiBadge, Button, Card, Empty, ErrorBox, StatusBadge } from '../components/ui.jsx';
+import { Button, Card, Empty, ErrorBox, StatusBadge } from '../components/ui.jsx';
 
 function Stat({ label, value, tone }) {
   const tones = {
@@ -155,10 +155,10 @@ export default function Hod() {
         </Card>
 
         <div className="space-y-6 lg:col-span-2">
-          <Card title="AI insight" right={<AiBadge />}>
+          <Card title="Weekly note">
             {summary ? <p className="text-sm text-ink/80">{summary}</p> : <p className="text-sm text-muted">Get a quick summary of coverage and fairness.</p>}
             <Button className="mt-3" variant="ghost" disabled={summaryBusy} onClick={getSummary}>
-              {summaryBusy ? 'Thinking…' : summary ? 'Refresh insight' : 'Generate insight'}
+              {summaryBusy ? 'Preparing…' : summary ? 'Refresh note' : 'Prepare note'}
             </Button>
           </Card>
           <Card title="Proxy load this month" subtitle="Used to keep the ranking fair">

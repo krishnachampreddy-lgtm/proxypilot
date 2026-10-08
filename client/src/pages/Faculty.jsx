@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import api, { errorText } from '../api';
-import { AiBadge, Button, Card, Empty, ErrorBox, StatusBadge } from '../components/ui.jsx';
+import { Button, Card, Empty, ErrorBox, StatusBadge } from '../components/ui.jsx';
 
 const EXAMPLES = [
   'Down with fever, cannot come tomorrow. Please arrange proxies for my classes.',
@@ -96,14 +96,13 @@ export default function Faculty() {
             </div>
             <ErrorBox text={error} />
             <Button type="submit" disabled={busy || text.trim().length < 5}>
-              {busy ? 'AI is arranging proxies…' : 'Submit leave'}
+              {busy ? 'Arranging cover…' : 'Submit leave'}
             </Button>
           </form>
 
           {result && (
             <div className="mt-5 space-y-3 rounded-md border border-brass bg-brass-soft/60 p-4">
               <div className="flex flex-wrap items-center gap-2 text-sm">
-                <AiBadge used={result.understood.aiUsed} />
                 <span className="text-ink/80">
                   Understood: <b>{result.understood.prettyDate}</b> · periods <b>{result.understood.periods.join(', ')}</b> · {result.understood.reason}
                 </span>
@@ -119,7 +118,7 @@ export default function Faculty() {
                   <p className="mt-1 text-sm text-ink/80">
                     {p.offeredTo ? <>Request sent to <b>{p.offeredTo.name}</b></> : 'No free teacher found'}
                   </p>
-                  {p.aiReason && <p className="mt-1 text-xs text-brass-2">✦ {p.aiReason}</p>}
+                  {p.aiReason && <p className="mt-1 text-xs text-brass-2">{p.aiReason}</p>}
                   <Candidates list={p.candidates} />
                 </div>
               ))}
@@ -171,7 +170,7 @@ export default function Faculty() {
                   <div className="text-sm text-ink/80">
                     {p.className} · {p.subject} — for {p.absentFaculty?.name}
                   </div>
-                  {p.aiReason && <p className="mt-1 text-xs text-brass-2">✦ Why you: {p.aiReason}</p>}
+                  {p.aiReason && <p className="mt-1 text-xs text-brass-2">Why you: {p.aiReason}</p>}
                   {p.handoverNote && (
                     <div className="mt-2 whitespace-pre-line rounded-lg bg-white p-2 text-xs text-ink/80">
                       <b>Handover note</b>

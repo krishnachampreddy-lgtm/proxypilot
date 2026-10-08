@@ -111,6 +111,13 @@ export const Leaves = {
   decide: async (id, status, note) =>
     (await q(`UPDATE leaves SET status = $2, hod_note = $3, decided_at = NOW() WHERE id = $1 RETURNING *`, [id, status, note ?? null]))[0],
   byFaculty: (fid) => q('SELECT * FROM leaves WHERE faculty_id = $1 ORDER BY date DESC, id DESC', [fid]),
+  remove: (id) => q(`DELETE FROM leaves WHERE id = $1 AND status = 'pending'`, [id]),
+  inMonth: (from, to) =>
+    q(
+      `SELECT l.*, u.name AS faculty_name FROM leaves l JOIN users u ON u.id = l.faculty_id
+       WHERE l.date >= $1 AND l.date <= $2 ORDER BY l.date, u.name`,
+      [from, to]
+    ),
   // only approved leave makes a teacher unavailable as a substitute
   facultyOnDate: async (date) =>
     (await q(`SELECT DISTINCT faculty_id FROM leaves WHERE date = $1 AND status = 'approved'`, [date])).map((r) => r.faculty_id),

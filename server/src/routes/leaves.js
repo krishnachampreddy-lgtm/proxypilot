@@ -4,6 +4,7 @@ import { Leaves, Proxies, Timetable, Users, hydrateProxies } from '../db.js';
 import { ensureStarterTimetable } from '../services/starterTimetable.js';
 import { requireAuth, requireRole, validate } from '../middleware/auth.js';
 import { parseLeave } from '../services/ai.js';
+import { leaveBalance, leaveCost } from '../services/leaveBalance.js';
 import { todayIST, weekday, prettyDate, addDays, PERIOD_TIMES } from '../services/dates.js';
 
 const router = Router();
@@ -58,6 +59,13 @@ router.post('/', validate(LeaveBody), async (req, res) => {
     });
   }
 
+  // 3. Check the yearly leave balance
+  const year = parsed.date.slice(0, 4);
+  const balance = leaveBalance(await Leaves.byFaculty(req.user.id), year);
+  if (balance.left < leaveCost(leaveType)) {
+    return res.status(400).json({ error: `You have ${balance.left} of ${balance.total} leaves left for ${year}. Not enough for this request.` });
+  }
+
   const leave = await Leaves.create({
     facultyId: req.user.id,
     date: parsed.date,
@@ -68,7 +76,7 @@ router.post('/', validate(LeaveBody), async (req, res) => {
     leaveType,
   });
 
-  // 3. Goes to the HOD first; cover is arranged only after approval
+  // 4. Goes to the HOD first; cover is arranged only after approval
   res.status(201).json({
     leave: { ...leave, _id: leave.id },
     status: 'pending',
@@ -90,6 +98,7 @@ router.get('/schedule', async (req, res) => {
     today: todayIST(),
     classes: classes.map((c) => ({ day: c.day, period: c.period, time: PERIOD_TIMES[c.period], className: c.class_name, subject: c.subject })),
     leaveDates: leaves.filter((l) => l.status !== 'declined').map((l) => l.date),
+    balance: leaveBalance(leaves, todayIST().slice(0, 4)),
   });
 });
 
@@ -111,7 +120,17 @@ router.get('/mine', async (req, res) => {
       hodNote: l.hod_note,
       proxies: proxies.filter((p) => p.leave === l.id),
     })),
+    balance: leaveBalance(leaves, todayIST().slice(0, 4)),
   });
+});
+
+// Withdraw a leave that the HOD has not decided yet
+router.post('/:id/cancel', async (req, res) => {
+  const leave = await Leaves.byId(Number(req.params.id) || 0);
+  if (!leave || leave.faculty_id !== req.user.id) return res.status(404).json({ error: 'Leave not found' });
+  if (leave.status !== 'pending') return res.status(409).json({ error: `This leave was already ${leave.status} and can't be cancelled.` });
+  await Leaves.remove(leave.id);
+  res.json({ ok: true });
 });
 
 export default router;

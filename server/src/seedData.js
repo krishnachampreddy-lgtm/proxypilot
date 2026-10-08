@@ -1,6 +1,6 @@
 import bcrypt from 'bcryptjs';
 import { q } from './db.js';
-import { todayIST, monthStart } from './services/dates.js';
+import { todayIST, monthStart, addDays, weekday } from './services/dates.js';
 
 // Fake but realistic demo data. Every account's password is: demo123
 export const DEMO_PASSWORD = 'demo123';
@@ -99,6 +99,19 @@ export async function seedDatabase() {
       await q(`INSERT INTO proxies (date, status, assigned_to, offered_to) VALUES ($1, 'accepted', $2, $2)`, [past, f.id]);
       pastCount++;
     }
+  }
+
+  // One leave already waiting for the HOD, so the dashboard is never empty
+  const rao = faculty.find((x) => x.email === 'rao@college.edu');
+  let sampleDate = addDays(todayIST(), 2);
+  while (weekday(sampleDate) === 'Sun') sampleDate = addDays(sampleDate, 1);
+  const raoPeriods = slots.filter((s) => s[5] === rao.id && s[0] === weekday(sampleDate)).map((s) => s[1]).sort((a, b) => a - b);
+  if (raoPeriods.length) {
+    await q(
+      `INSERT INTO leaves (faculty_id, date, raw_text, reason, periods, ai_used, status, leave_type)
+       VALUES ($1,$2,$3,$4,$5,false,'pending','full')`,
+      [rao.id, sampleDate, 'Family function out of town, need full day leave', 'Family function', raoPeriods]
+    );
   }
 
   console.log(`Seeded ${faculty.length} faculty, ${slots.length} timetable slots, ${pastCount} past proxies`);

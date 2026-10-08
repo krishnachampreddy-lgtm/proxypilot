@@ -42,7 +42,12 @@ function LeaveRequest({ l, onDone, onError, onNotice }) {
         <div>
           <div className="font-display text-lg font-medium text-ink">{l.facultyName}</div>
           <div className="font-mono text-xs text-muted">{l.prettyDate} · {l.reason}</div>
-          <div className="mt-1 inline-block rounded bg-ink px-2 py-0.5 text-xs font-semibold text-paper">{leaveTypeLabel(l.leaveType, l.periods)}</div>
+          <div className="mt-1 flex flex-wrap items-center gap-2">
+            <span className="inline-block rounded bg-ink px-2 py-0.5 text-xs font-semibold text-paper">{leaveTypeLabel(l.leaveType, l.periods)}</span>
+            {l.balance && (
+              <span className="font-mono text-[11px] text-muted">{l.balance.left} of {l.balance.total} leaves left this year</span>
+            )}
+          </div>
         </div>
         <span className="rounded bg-brass-soft px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide text-brass-2">New</span>
       </div>
@@ -150,6 +155,27 @@ export default function Hod() {
     load();
   };
 
+  const [month, setMonth] = useState(() => new Date().toISOString().slice(0, 7));
+  const [reportBusy, setReportBusy] = useState(false);
+  const downloadReport = async () => {
+    setReportBusy(true);
+    try {
+      const res = await api.get('/hod/report', { params: { month }, responseType: 'blob' });
+      const url = URL.createObjectURL(res.data);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `proxypilot-report-${month}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setReportBusy(false);
+    }
+  };
+
   const reset = async () => {
     if (!window.confirm('Reset all demo data?')) return;
     await api.post('/hod/reset-demo');
@@ -251,6 +277,19 @@ export default function Hod() {
         </Card>
 
         <div className="space-y-6 lg:col-span-2">
+          <Card title="Monthly report" subtitle="Leaves, substitutes and cover status — opens in Excel">
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                type="month"
+                value={month}
+                onChange={(e) => setMonth(e.target.value)}
+                className="rounded-md border border-line bg-white px-2.5 py-1.5 text-sm outline-none focus:border-ink"
+              />
+              <Button variant="ghost" disabled={reportBusy || !month} onClick={downloadReport}>
+                {reportBusy ? 'Preparing…' : 'Download report'}
+              </Button>
+            </div>
+          </Card>
           <Card title="Weekly note">
             {summary ? <p className="text-sm text-ink/80">{summary}</p> : <p className="text-sm text-muted">Get a quick summary of coverage and fairness.</p>}
             <Button className="mt-3" variant="ghost" disabled={summaryBusy} onClick={getSummary}>

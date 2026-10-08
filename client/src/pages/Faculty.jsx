@@ -81,6 +81,18 @@ export default function Faculty() {
   const sessionClasses = dayClasses.filter((c) => (session === 'morning' ? c.period <= 4 : session === 'afternoon' ? c.period >= 5 : true));
   const pretty = date ? new Date(`${date}T00:00:00Z`).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' }) : '';
 
+  const cancelLeave = async (id) => {
+    if (!window.confirm('Cancel this leave request?')) return;
+    try {
+      await api.post(`/leaves/${id}/cancel`);
+      load();
+    } catch (err) {
+      setError(errorText(err));
+    }
+  };
+
+  const balance = schedule?.balance;
+
   const respond = async (id, action) => {
     try {
       await api.post(`/proxies/${id}/respond`, { action });
@@ -136,6 +148,20 @@ export default function Faculty() {
       <div className="space-y-6 lg:col-span-3">
         <Card title="Apply for leave" subtitle="Pick a date on the calendar, or just write it like a WhatsApp message.">
           <form onSubmit={submitLeave} className="space-y-4">
+            {balance && (
+              <div className="flex items-center gap-3 rounded-md border border-line bg-paper/60 px-3 py-2">
+                <div className="font-display text-2xl font-medium tabular-nums text-ink">
+                  {balance.left}<span className="text-base text-muted"> / {balance.total}</span>
+                </div>
+                <div className="flex-1">
+                  <div className="text-sm font-semibold text-ink">Leaves left this year</div>
+                  <div className="mt-1 h-1.5 rounded bg-line">
+                    <div className={`h-1.5 rounded ${balance.left <= 2 ? 'bg-clay' : 'bg-sage'}`} style={{ width: `${(balance.left / balance.total) * 100}%` }} />
+                  </div>
+                  <div className="mt-1 text-[11px] text-muted">Full day counts 1 · a session or a few periods count ½</div>
+                </div>
+              </div>
+            )}
             {schedule && (
               <LeaveCalendar
                 today={schedule.today}
@@ -256,7 +282,12 @@ export default function Faculty() {
                   </div>
                   <p className="mt-1 text-sm font-medium text-ink/80">{leaveTypeLabel(l.leaveType, l.periods)}</p>
                   <p className="mt-0.5 text-xs italic text-muted">“{l.rawText}” · {l.reason}</p>
-                  {l.status === 'pending' && <p className="mt-2 text-sm text-ink/80">Waiting for the HOD to approve.</p>}
+                  {l.status === 'pending' && (
+                    <div className="mt-2 flex items-center justify-between gap-2">
+                      <p className="text-sm text-ink/80">Waiting for the HOD to approve.</p>
+                      <button type="button" onClick={() => cancelLeave(l._id)} className="text-xs font-semibold text-clay hover:underline">Cancel request</button>
+                    </div>
+                  )}
                   {l.status === 'declined' && (
                     <div className="mt-2 rounded border border-clay/30 bg-clay-soft px-3 py-2 text-sm text-clay">
                       <b>{l.hodNote?.startsWith('Declined automatically') ? 'Reason:' : 'HOD’s reason:'}</b> {l.hodNote?.replace('Declined automatically: ', '')}

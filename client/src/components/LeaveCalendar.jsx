@@ -12,7 +12,7 @@ const dayKey = (s) => DAY_KEYS[new Date(`${s}T00:00:00Z`).getUTCDay()];
  * - days you are already on leave are struck through
  * - Sundays and past days are disabled
  */
-export default function LeaveCalendar({ today, classes, leaveDates, value, onChange }) {
+export default function LeaveCalendar({ today, classes, leaveDates, value, endValue, onChange }) {
   const [ty, tm] = today.split('-').map(Number);
   const [view, setView] = useState({ y: ty, m: tm - 1 });
 
@@ -51,17 +51,18 @@ export default function LeaveCalendar({ today, classes, leaveDates, value, onCha
           const sunday = key === 'Sun';
           const taken = onLeave.has(date);
           const teaches = teachDays.has(key);
-          const selected = value === date;
+          const selected = value === date || endValue === date;
+          const inRange = value && endValue && date > value && date < endValue;
           const disabled = past || sunday || taken;
           return (
             <button
               type="button"
               key={date}
               disabled={disabled}
-              onClick={() => onChange(selected ? null : date)}
+              onClick={() => onChange(date)}
               title={taken ? 'Already on leave' : sunday ? 'Sunday' : teaches ? 'You have classes' : 'No classes'}
               className={`relative flex h-10 flex-col items-center justify-center rounded text-sm transition
-                ${selected ? 'bg-ink text-paper' : disabled ? 'text-muted/40' : 'text-ink hover:bg-brass-soft'}
+                ${selected ? 'bg-ink text-paper' : inRange && !disabled ? 'bg-brass-soft text-ink' : disabled ? 'text-muted/40' : 'text-ink hover:bg-brass-soft'}
                 ${date === today && !selected ? 'ring-1 ring-brass' : ''}`}
             >
               <span className={taken ? 'line-through' : ''}>{d}</span>

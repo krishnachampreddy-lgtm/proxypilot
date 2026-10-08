@@ -23,17 +23,31 @@ async function buildOverview() {
     Leaves.pending(),
   ]);
 
-  // leave requests waiting for the HOD, with the classes each one affects
-  const leaveRequests = [];
+  // leave requests waiting for the HOD (days of a multi-day leave are grouped into one request)
+  const groups = new Map();
   for (const l of pendingRows) {
-    const day = weekday(l.date);
-    const classes = (await Timetable.byFaculty(l.faculty_id))
-      .filter((c) => c.day === day && l.periods.includes(c.period))
-      .map((c) => ({ period: c.period, time: PERIOD_TIMES[c.period], className: c.class_name, subject: c.subject }));
+    const key = l.group_id || `single-${l.id}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(l);
+  }
+  const leaveRequests = [];
+  for (const rows of groups.values()) {
+    const l = rows[0];
+    const last = rows[rows.length - 1];
+    const timetable = await Timetable.byFaculty(l.faculty_id);
+    const classes = [];
+    for (const r of rows) {
+      const day = weekday(r.date);
+      for (const c of timetable.filter((c) => c.day === day && r.periods.includes(c.period)).sort((a, b) => a.period - b.period)) {
+        classes.push({ key: `${r.date}-${c.period}`, day, period: c.period, time: PERIOD_TIMES[c.period], className: c.class_name, subject: c.subject });
+      }
+    }
     leaveRequests.push({
       _id: l.id,
       date: l.date,
-      prettyDate: prettyDate(l.date),
+      endDate: last.date,
+      days: rows.length,
+      prettyDate: rows.length > 1 ? `${prettyDate(l.date)} – ${prettyDate(last.date)}` : prettyDate(l.date),
       reason: l.reason,
       rawText: l.raw_text,
       leaveType: l.leave_type,
@@ -92,16 +106,25 @@ router.post('/leaves/:id/decide', validate(DecideBody), async (req, res) => {
   const leave = await Leaves.byId(Number(req.params.id) || 0);
   if (!leave) return res.status(404).json({ error: 'Leave request not found' });
   if (leave.status !== 'pending') return res.status(409).json({ error: `This leave was already ${leave.status}.` });
+  const days = (await Leaves.sameGroup(leave)).filter((l) => l.status === 'pending');
 
   if (req.body.action === 'decline') {
-    await Leaves.decide(leave.id, 'declined', req.body.note);
+    for (const d of days) await Leaves.decide(d.id, 'declined', req.body.note);
     return res.json({ ok: true, status: 'declined' });
   }
-  const approved = await Leaves.decide(leave.id, 'approved', req.body.note || null);
-  const proxies = await arrangeCover(approved);
-  const after = await Leaves.byId(leave.id);
-  if (after.status === 'declined') return res.json({ ok: true, status: 'declined', note: after.hod_note });
-  res.json({ ok: true, status: 'approved', proxies: proxies.length });
+
+  // approve every day, then arrange cover day by day
+  let proxies = 0;
+  const notes = [];
+  for (const d of days) {
+    const approved = await Leaves.decide(d.id, 'approved', req.body.note || null);
+    proxies += (await arrangeCover(approved)).length;
+    const after = await Leaves.byId(d.id);
+    if (after.status === 'declined') notes.push(days.length > 1 ? `${prettyDate(d.date)}: ${after.hod_note}` : after.hod_note);
+  }
+  if (notes.length === days.length) return res.json({ ok: true, status: 'declined', note: notes.join(' ') });
+  if (notes.length) return res.json({ ok: true, status: 'approved', proxies, note: `Approved, except — ${notes.join(' ')}` });
+  res.json({ ok: true, status: 'approved', proxies });
 });
 
 // "No reply" button: pass the request to the next best teacher

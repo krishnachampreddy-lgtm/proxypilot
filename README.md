@@ -14,13 +14,13 @@ When a teacher goes on leave, the HOD spends 30–60 minutes every morning on Wh
 
 ProxyPilot turns that whole chain into one automated workflow inside the app:
 
-1. **Teacher applies for leave** — picks a date on the calendar (or types it in plain words, e.g. *"Down with fever, can't come tomorrow"*) and chooses **Full day**, **Morning (P1–P4)**, **Afternoon (P5–P6)** or **specific periods**. The app shows exactly which classes will need cover.
+1. **Teacher applies for leave** — picks one date or **several days** (tap first and last day; Sundays and days without classes are skipped) on the calendar (or types it in plain words, e.g. *"Down with fever, can't come tomorrow"*) and chooses **Full day**, **Morning (P1–P4)**, **Afternoon (P5–P6)** or **specific periods**. The app shows exactly which classes will need cover.
 2. **Leave balance** — every teacher gets 12 leaves a year (full day = 1, session/periods = ½). The balance is shown before applying, and a request that exceeds it is blocked.
-3. **HOD approves or declines** — Rahul Attuluri (HOD) sees each request with the leave type, affected classes and the teacher's remaining balance. Declining requires a reason, which the teacher sees.
+3. **HOD approves or declines** — a multi-day leave arrives as one request. Rahul Attuluri (HOD) sees each request with the leave type, affected classes and the teacher's remaining balance. Declining requires a reason, which the teacher sees.
 4. **Teacher can cancel** a request while it is still waiting for the HOD.
-5. **Substitutes are found automatically** — only teachers of the **same subject** who are free that period and not on leave are considered, ranked fairly: knows the class (+20), fewer proxies this month (fairness), lighter load that day.
+5. **Substitutes are found automatically** — teachers of the **same subject** are asked first; if none of them can take the class, it goes to free teachers of **other subjects** as backup. Within each group they are ranked fairly: knows the class (+20), fewer proxies this month (fairness), lighter load that day.
 6. **Requests appear in the app** (no email spam) — the top teacher gets a request with a handover note. **Accept** assigns the class; **Decline** (or the HOD's *No reply → next*) passes it to the next best teacher.
-7. **No one available → leave is declined automatically**, with the reason shown to the teacher, so a class is never silently left empty.
+7. **No one at all available → that day's leave is declined automatically**, with the reason shown to the teacher, so a class is never silently left empty.
 8. **Students** see the substitute on their timetable.
 9. **HOD dashboard** — coverage stats, proxy-load fairness chart, weekly note, and a **monthly report download** (CSV that opens in Excel: date, teacher, leave type, reason, HOD decision, period, class, subject, substitute, cover status, plus a summary).
 
@@ -108,10 +108,10 @@ With `EMAIL_DEV_LOG=1`, OTP codes are printed in the terminal instead of emailed
 | POST | `/api/auth/login` | public | Demo accounts (email + password) |
 | POST | `/api/auth/complete-profile` | all | Role + subjects on first login |
 | GET | `/api/auth/me` | all | Current user |
-| POST | `/api/leaves` | faculty | `{ date, session, periods?, text? }` → pending leave |
+| POST | `/api/leaves` | faculty | `{ date, endDate?, session, periods?, text? }` → pending leave |
 | GET | `/api/leaves/schedule` | faculty | Weekly classes, leave dates, balance |
 | GET | `/api/leaves/mine` | faculty | My leaves, status, HOD note, cover |
-| POST | `/api/leaves/:id/cancel` | faculty | Withdraw a pending leave |
+| POST | `/api/leaves/:id/cancel` | faculty | Withdraw a pending leave (all its days) |
 | GET | `/api/proxies/mine` | faculty | Requests waiting for me + accepted |
 | POST | `/api/proxies/:id/respond` | faculty | `{ action: "accept" \| "decline" }` |
 | GET | `/api/hod/overview` | hod | Leave requests, stats, proxies, load |

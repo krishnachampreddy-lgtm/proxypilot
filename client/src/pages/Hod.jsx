@@ -27,7 +27,7 @@ function LeaveRequest({ l, onDone, onError, onNotice }) {
     setBusy(true);
     try {
       const { data } = await api.post(`/hod/leaves/${l._id}/decide`, { action, note });
-      if (data.status === 'declined' && action === 'approve') onNotice(data.note);
+      if (data.note && action === 'approve') onNotice(data.note);
       onDone();
     } catch (err) {
       onError(errorText(err));
@@ -43,7 +43,9 @@ function LeaveRequest({ l, onDone, onError, onNotice }) {
           <div className="font-display text-lg font-medium text-ink">{l.facultyName}</div>
           <div className="font-mono text-xs text-muted">{l.prettyDate} · {l.reason}</div>
           <div className="mt-1 flex flex-wrap items-center gap-2">
-            <span className="inline-block rounded bg-ink px-2 py-0.5 text-xs font-semibold text-paper">{leaveTypeLabel(l.leaveType, l.periods)}</span>
+            <span className="inline-block rounded bg-ink px-2 py-0.5 text-xs font-semibold text-paper">
+              {l.days > 1 ? `${l.days} days · full day` : leaveTypeLabel(l.leaveType, l.periods)}
+            </span>
             {l.balance && (
               <span className="font-mono text-[11px] text-muted">{l.balance.left} of {l.balance.total} leaves left this year</span>
             )}
@@ -55,8 +57,8 @@ function LeaveRequest({ l, onDone, onError, onNotice }) {
       {l.classes.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-1.5">
           {l.classes.map((c) => (
-            <span key={c.period} className="rounded border border-line bg-white px-2 py-0.5 font-mono text-[11px] text-ink/80">
-              P{c.period} · {c.className} · {c.subject}
+            <span key={c.key} className="rounded border border-line bg-white px-2 py-0.5 font-mono text-[11px] text-ink/80">
+              {l.days > 1 ? `${c.day} ` : ''}P{c.period} · {c.className} · {c.subject}
             </span>
           ))}
         </div>
@@ -209,7 +211,7 @@ export default function Hod() {
             <span className="flex h-8 w-8 items-center justify-center rounded-full bg-brass font-mono text-sm font-semibold text-ink">{data.leaveRequests.length}</span>
             <div>
               <h2 className="font-display text-xl font-medium text-ink">Leave requests</h2>
-              <p className="text-sm text-muted">Approve to arrange substitutes automatically. Declining needs a reason, which the teacher will see.</p>
+              <p className="text-sm text-muted">Approve to arrange substitutes automatically — same-subject teachers first, others as backup. Declining needs a reason, which the teacher will see.</p>
             </div>
           </div>
           <div className="grid gap-3 md:grid-cols-2">

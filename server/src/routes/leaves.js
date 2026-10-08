@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { Leaves, Proxies, Timetable, Users, hydrateProxies } from '../db.js';
 import { ensureStarterTimetable } from '../services/starterTimetable.js';
@@ -14,6 +15,7 @@ const LeaveBody = z
   .object({
     text: z.string().trim().max(500, 'Keep it under 500 characters').optional().default(''),
     date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Pick a valid date').optional(),
+    endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Pick a valid end date').optional(),
     periods: z.array(z.number().int().min(1).max(6)).max(6).optional(),
     session: z.enum(['full', 'morning', 'afternoon', 'periods']).optional(),
   })
@@ -30,10 +32,11 @@ router.post('/', validate(LeaveBody), async (req, res) => {
   const scheduleText = myClasses.map((c) => `${c.day} P${c.period} ${c.class_name} ${c.subject}`).join('; ');
 
   // 1. Read the message; a date picked on the calendar always wins
-  const { text, date, periods, session } = req.body;
+  const { text, date, periods, session, endDate } = req.body;
   if (date && (date < today || date > addDays(today, 120))) {
     return res.status(400).json({ error: 'Pick a date between today and the next 4 months.' });
   }
+  if (date && endDate && endDate > date) return applyMultiDay(req, res, myClasses);
   const parsed = text.length >= 3 ? await parseLeave(text, today, scheduleText) : { date: today, periods: [], reason: 'Leave', aiUsed: false };
   if (date) {
     parsed.date = date;
@@ -90,6 +93,56 @@ router.post('/', validate(LeaveBody), async (req, res) => {
   });
 });
 
+/**
+ * Leave for several days in a row (full days). Sundays and days without classes are skipped.
+ * Every day is stored as its own leave (so each day gets its own cover) but they share a group id,
+ * so the HOD sees and decides one request.
+ */
+async function applyMultiDay(req, res, myClasses) {
+  const { date, endDate, text } = req.body;
+  if (endDate > addDays(date, 30)) return res.status(400).json({ error: 'A single leave can be at most one month long.' });
+  if (endDate > addDays(todayIST(), 120)) return res.status(400).json({ error: 'Pick dates within the next 4 months.' });
+
+  const mine = await Leaves.byFaculty(req.user.id);
+  const taken = new Set(mine.filter((l) => l.status !== 'declined').map((l) => l.date));
+  const days = [];
+  for (let d = date; d <= endDate; d = addDays(d, 1)) {
+    const key = weekday(d);
+    if (key === 'Sun') continue;
+    if (taken.has(d)) return res.status(409).json({ error: `You already applied leave for ${prettyDate(d)}.` });
+    const classes = myClasses.filter((c) => c.day === key);
+    if (classes.length) days.push({ date: d, periods: classes.map((c) => c.period).sort((a, b) => a - b) });
+  }
+  if (days.length === 0) return res.status(400).json({ error: 'You have no classes on these days. No proxy needed!' });
+
+  const year = date.slice(0, 4);
+  const balance = leaveBalance(mine, year);
+  if (balance.left < days.length) {
+    return res.status(400).json({ error: `This needs ${days.length} leaves but you have ${balance.left} of ${balance.total} left for ${year}.` });
+  }
+
+  let reason = text.length >= 3 ? (await parseLeave(text, date, '')).reason : 'Leave';
+  if (reason === 'Leave' && text.length >= 3) reason = text.length > 60 ? `${text.slice(0, 57)}…` : text;
+  const groupId = randomUUID();
+  const label = `${prettyDate(date)} – ${prettyDate(endDate)}`;
+  for (const d of days) {
+    await Leaves.create({
+      facultyId: req.user.id,
+      date: d.date,
+      rawText: text || `Leave from ${label}`,
+      reason,
+      periods: d.periods,
+      aiUsed: false,
+      leaveType: 'full',
+      groupId,
+    });
+  }
+  res.status(201).json({
+    status: 'pending',
+    understood: { date, endDate, prettyDate: label, days: days.length, periods: [], reason, leaveType: 'full' },
+  });
+}
+
 // For the calendar: my weekly classes + dates I already took leave
 router.get('/schedule', async (req, res) => {
   await ensureStarterTimetable(await Users.byId(req.user.id));
@@ -118,6 +171,8 @@ router.get('/mine', async (req, res) => {
       leaveType: l.leave_type,
       status: l.status,
       hodNote: l.hod_note,
+      groupId: l.group_id,
+      groupDays: l.group_id ? leaves.filter((x) => x.group_id === l.group_id).length : 1,
       proxies: proxies.filter((p) => p.leave === l.id),
     })),
     balance: leaveBalance(leaves, todayIST().slice(0, 4)),
@@ -129,7 +184,7 @@ router.post('/:id/cancel', async (req, res) => {
   const leave = await Leaves.byId(Number(req.params.id) || 0);
   if (!leave || leave.faculty_id !== req.user.id) return res.status(404).json({ error: 'Leave not found' });
   if (leave.status !== 'pending') return res.status(409).json({ error: `This leave was already ${leave.status} and can't be cancelled.` });
-  await Leaves.remove(leave.id);
+  for (const l of await Leaves.sameGroup(leave)) await Leaves.remove(l.id);
   res.json({ ok: true });
 });
 

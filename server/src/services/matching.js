@@ -6,7 +6,8 @@ const MAX_PERIODS_PER_DAY = 5;
 /**
  * Rank every possible substitute for one class.
  * Rules:
- *   must  - teaches the same subject, free in that period, not on leave that day, under the daily limit
+ *   must  - free in that period, not on leave that day, under the daily limit
+ *   order - teachers of the same subject always come first; other subjects are the backup
  *   +20   - already teaches that class
  *   +10   - minus 4 per proxy taken this month  (fairness)
  *   -5    - per period already busy that day     (workload)
@@ -31,8 +32,7 @@ export async function rankCandidates({ date, day, period, className, subject, ab
   const ranked = [];
   for (const f of faculty) {
     if (f.id === absentFacultyId || busy.has(f.id) || leave.has(f.id) || takenThisPeriod.has(f.id)) continue;
-    // only teachers of the same subject can cover the class
-    if (!f.subjects?.includes(subject)) continue;
+    const sameSubject = Boolean(f.subjects?.includes(subject));
 
     const ownPeriods = await Timetable.countFacultyDay(day, f.id);
     const proxyPeriods = proxiesToday.filter((p) => p.assigned_to === f.id).length;
@@ -41,7 +41,7 @@ export async function rankCandidates({ date, day, period, className, subject, ab
 
     const factors = [`free in period ${period}`];
     let score = 50;
-    factors.push(`teaches ${subject}`);
+    factors.push(sameSubject ? `teaches ${subject}` : `backup — teaches ${(f.subjects || []).join(', ')}`);
     if (teachesClass.has(f.id)) {
       score += 20;
       factors.push(`knows ${className}`);
@@ -52,10 +52,11 @@ export async function rankCandidates({ date, day, period, className, subject, ab
     score -= 5 * load;
     factors.push(`${load} ${load === 1 ? 'class' : 'classes'} that day`);
 
-    ranked.push({ faculty: f.id, name: f.name, score, factors });
+    ranked.push({ faculty: f.id, name: f.name, score, factors, sameSubject });
   }
 
-  ranked.sort((a, b) => b.score - a.score);
+  // same-subject teachers first, then everyone else; best score first within each group
+  ranked.sort((a, b) => Number(b.sameSubject) - Number(a.sameSubject) || b.score - a.score);
   return ranked;
 }
 
@@ -67,6 +68,12 @@ export function advance(proxy, action) {
   const next = proxy.candidates[proxy.current_index];
   if (next) {
     proxy.offered_to = next.faculty;
+    // tell the next teacher why it reached them
+    const why = (next.factors || []).filter((f) => !f.startsWith('backup')).join(', ');
+    proxy.ai_reason =
+      next.sameSubject === false
+        ? `No ${proxy.subject} teacher could take it, so it came to you as backup. ${why}`.trim()
+        : why || proxy.ai_reason;
     proxy.history.push({ faculty: next.faculty, action: 'offered', at });
   } else {
     proxy.offered_to = null;

@@ -33,7 +33,7 @@ export async function arrangeCover(leave) {
       subject: c.subject,
       currentTopic: c.current_topic,
       absentFacultyId: leave.faculty_id,
-      candidates: ranked.map(({ faculty, score, factors }) => ({ faculty, score, factors })),
+      candidates: ranked.map(({ faculty, score, factors, sameSubject }) => ({ faculty, score, factors, sameSubject })),
       offeredTo: top?.faculty,
       status: top ? 'pending' : 'uncovered',
       history: top ? [{ faculty: top.faculty, action: 'offered', at: new Date().toISOString() }] : [],
@@ -50,7 +50,7 @@ export async function arrangeCover(leave) {
     });
   }
 
-  // a class nobody of that subject can take -> the whole leave is declined
+  // a class nobody at all is free to take -> this day's leave is declined
   const stuck = proxies.find((p) => p.status === 'uncovered');
   if (stuck) {
     await declineForNoCover(leave.id, stuck, 'free');
@@ -68,8 +68,8 @@ export async function arrangeCover(leave) {
 }
 
 /**
- * No teacher of the subject could take a class (none free, or all declined):
- * decline the leave with a clear reason and cancel any cover already arranged for it.
+ * Nobody could take a class (no teacher free, or every teacher declined — same subject first, then others):
+ * decline that day's leave with a clear reason and cancel any cover already arranged for it.
  */
 export async function declineForNoCover(leaveId, proxy, why = 'declined') {
   const leave = await Leaves.byId(leaveId);
@@ -77,8 +77,8 @@ export async function declineForNoCover(leaveId, proxy, why = 'declined') {
   const where = `P${proxy.period} (${PERIOD_TIMES[proxy.period]}) · ${proxy.class_name}`;
   const note =
     why === 'free'
-      ? `Declined automatically: no other ${proxy.subject} teacher is free to take ${where}.`
-      : `Declined automatically: none of the ${proxy.subject} teachers could take ${where}.`;
+      ? `Declined automatically: no teacher is free to take ${where}.`
+      : `Declined automatically: no teacher (${proxy.subject} or any other subject) could take ${where}.`;
   await Leaves.decide(leaveId, 'declined', note);
   await q('DELETE FROM proxies WHERE leave_id = $1', [leaveId]);
   return note;

@@ -102,9 +102,9 @@ export const Leaves = {
   create: async (l) =>
     (
       await q(
-        `INSERT INTO leaves (faculty_id, date, raw_text, reason, periods, ai_used, status, leave_type)
-         VALUES ($1,$2,$3,$4,$5,$6,'pending',$7) RETURNING *`,
-        [l.facultyId, l.date, l.rawText, l.reason, l.periods, l.aiUsed, l.leaveType || 'full']
+        `INSERT INTO leaves (faculty_id, date, raw_text, reason, periods, ai_used, status, leave_type, group_id)
+         VALUES ($1,$2,$3,$4,$5,$6,'pending',$7,$8) RETURNING *`,
+        [l.facultyId, l.date, l.rawText, l.reason, l.periods, l.aiUsed, l.leaveType || 'full', l.groupId ?? null]
       )
     )[0],
   byId: async (id) => (await q('SELECT * FROM leaves WHERE id = $1', [id]))[0],
@@ -112,6 +112,9 @@ export const Leaves = {
     (await q(`UPDATE leaves SET status = $2, hod_note = $3, decided_at = NOW() WHERE id = $1 RETURNING *`, [id, status, note ?? null]))[0],
   byFaculty: (fid) => q('SELECT * FROM leaves WHERE faculty_id = $1 ORDER BY date DESC, id DESC', [fid]),
   remove: (id) => q(`DELETE FROM leaves WHERE id = $1 AND status = 'pending'`, [id]),
+  // every day of the same request (a single-day leave is its own group)
+  sameGroup: (leave) =>
+    leave.group_id ? q('SELECT * FROM leaves WHERE group_id = $1 ORDER BY date', [leave.group_id]) : Promise.resolve([leave]),
   inMonth: (from, to) =>
     q(
       `SELECT l.*, u.name AS faculty_name FROM leaves l JOIN users u ON u.id = l.faculty_id

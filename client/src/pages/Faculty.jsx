@@ -29,6 +29,8 @@ export default function Faculty() {
   const [requests, setRequests] = useState({ waiting: [], accepted: [] });
   const [schedule, setSchedule] = useState(null);
   const [date, setDate] = useState(null);
+  const [endDate, setEndDate] = useState(null); // set only for a leave of several days
+  const [multi, setMulti] = useState(false);
   const [skip, setSkip] = useState([]); // periods the teacher un-ticked
   const [session, setSession] = useState('full'); // full | morning | afternoon | periods
 
@@ -56,7 +58,11 @@ export default function Faculty() {
     setResult(null);
     try {
       const body = { text };
-      if (date) {
+      if (date && multi) {
+        if (!endDate) throw { response: { data: { error: 'Tap the last day of your leave on the calendar.' } } };
+        body.date = date;
+        body.endDate = endDate;
+      } else if (date) {
         body.date = date;
         body.session = session;
         const chosen = sessionClasses.map((c) => c.period).filter((p) => session !== 'periods' || !skip.includes(p));
@@ -67,6 +73,8 @@ export default function Faculty() {
       setResult(data);
       setText('');
       setDate(null);
+      setEndDate(null);
+      setMulti(false);
       setSkip([]);
       setSession('full');
       load();
@@ -79,6 +87,23 @@ export default function Faculty() {
 
   const dayClasses = date && schedule ? schedule.classes.filter((c) => c.day === dayKey(date)).sort((a, b) => a.period - b.period) : [];
   const sessionClasses = dayClasses.filter((c) => (session === 'morning' ? c.period <= 4 : session === 'afternoon' ? c.period >= 5 : true));
+  const fmt = (d) => new Date(`${d}T00:00:00Z`).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
+  const rangeDays = [];
+  if (multi && date && endDate) {
+    for (let t = Date.parse(`${date}T00:00:00Z`); t <= Date.parse(`${endDate}T00:00:00Z`); t += 864e5) {
+      const d = new Date(t).toISOString().slice(0, 10);
+      const n = schedule ? schedule.classes.filter((c) => c.day === dayKey(d)).length : 0;
+      if (dayKey(d) !== 'Sun' && n) rangeDays.push({ d, n });
+    }
+  }
+  const pickDate = (d) => {
+    setError('');
+    setSkip([]);
+    if (multi && date && !endDate && d > date) return setEndDate(d);
+    if (d === date && !endDate) return setDate(null);
+    setDate(d);
+    setEndDate(null);
+  };
   const pretty = date ? new Date(`${date}T00:00:00Z`).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' }) : '';
 
   const cancelLeave = async (id) => {
@@ -168,17 +193,48 @@ export default function Faculty() {
                 classes={schedule.classes}
                 leaveDates={schedule.leaveDates}
                 value={date}
-                onChange={(d) => { setDate(d); setSkip([]); setError(''); }}
+                endValue={multi ? endDate : null}
+                onChange={pickDate}
               />
             )}
 
             {date && (
               <div className="rounded-md border border-line bg-paper/60 p-3">
                 <div className="flex items-center justify-between">
-                  <p className="text-sm font-semibold text-ink">{pretty}</p>
-                  <button type="button" onClick={() => setDate(null)} className="text-xs text-brass-2 hover:underline">Clear date</button>
+                  <p className="text-sm font-semibold text-ink">{multi && endDate ? `${fmt(date)} – ${fmt(endDate)}` : pretty}</p>
+                  <button type="button" onClick={() => { setDate(null); setEndDate(null); }} className="text-xs text-brass-2 hover:underline">Clear date</button>
                 </div>
-                {dayClasses.length === 0 ? (
+                <div className="mt-2 inline-flex rounded-md border border-line bg-white p-0.5 text-xs font-semibold">
+                  {[[false, 'One day'], [true, 'Several days']].map(([v, label]) => (
+                    <button
+                      type="button"
+                      key={label}
+                      onClick={() => { setMulti(v); setEndDate(null); setSession('full'); }}
+                      className={`rounded px-3 py-1 transition ${multi === v ? 'bg-ink text-paper' : 'text-ink/70 hover:text-ink'}`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                {multi ? (
+                  !endDate ? (
+                    <p className="mt-2 text-sm text-ink/80">Now tap the <b>last day</b> of your leave on the calendar.</p>
+                  ) : rangeDays.length === 0 ? (
+                    <p className="mt-2 text-sm text-muted">You have no classes on these days, so nothing needs covering.</p>
+                  ) : (
+                    <div className="mt-2">
+                      <p className="text-sm text-ink/80">
+                        <b>{rangeDays.length} {rangeDays.length === 1 ? 'day' : 'days'}</b> · full day · uses {rangeDays.length} of your {balance?.left ?? '—'} leaves left
+                      </p>
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {rangeDays.map(({ d, n }) => (
+                          <span key={d} className="rounded border border-ink bg-ink px-2 py-1 font-mono text-[11px] text-paper">{fmt(d)} · {n} {n === 1 ? 'class' : 'classes'}</span>
+                        ))}
+                      </div>
+                      <p className="mt-2 text-xs text-muted">Sundays and days without classes are skipped.</p>
+                    </div>
+                  )
+                ) : dayClasses.length === 0 ? (
                   <p className="mt-1 text-sm text-muted">You have no classes this day, so nothing needs covering.</p>
                 ) : (
                   <>
@@ -253,8 +309,8 @@ export default function Faculty() {
             </div>
 
             <ErrorBox text={error} />
-            <Button type="submit" disabled={busy || (date ? sessionClasses.length === 0 : text.trim().length < 5)}>
-              {busy ? 'Arranging cover…' : date ? 'Apply leave for this date' : 'Submit leave'}
+            <Button type="submit" disabled={busy || (date ? (multi ? rangeDays.length === 0 : sessionClasses.length === 0) : text.trim().length < 5)}>
+              {busy ? 'Sending…' : date ? (multi ? `Apply leave for ${rangeDays.length || ''} days` : 'Apply leave for this date') : 'Submit leave'}
             </Button>
           </form>
 
@@ -262,7 +318,7 @@ export default function Faculty() {
             <div className="mt-5 rounded-md border border-brass bg-brass-soft/60 p-4">
               <p className="font-display text-lg font-medium text-ink">Sent to the HOD for approval</p>
               <p className="mt-1 text-sm text-ink/80">
-                <b>{result.understood.prettyDate}</b> · {leaveTypeLabel(result.understood.leaveType, result.understood.periods)} · {result.understood.reason}
+                <b>{result.understood.prettyDate}</b> · {result.understood.days > 1 ? `${result.understood.days} days` : leaveTypeLabel(result.understood.leaveType, result.understood.periods)} · {result.understood.reason}
               </p>
               <p className="mt-2 text-xs text-muted">Once the HOD approves, substitutes are arranged for your classes. You can follow it under “My leaves”.</p>
             </div>
@@ -280,12 +336,15 @@ export default function Faculty() {
                     <span className="font-semibold text-ink">{l.prettyDate}</span>
                     <LeaveStatus status={l.status} />
                   </div>
-                  <p className="mt-1 text-sm font-medium text-ink/80">{leaveTypeLabel(l.leaveType, l.periods)}</p>
+                  <p className="mt-1 text-sm font-medium text-ink/80">
+                    {leaveTypeLabel(l.leaveType, l.periods)}
+                    {l.groupDays > 1 && <span className="ml-2 rounded bg-paper-2 px-1.5 py-0.5 font-mono text-[10px] uppercase text-muted">part of {l.groupDays}-day leave</span>}
+                  </p>
                   <p className="mt-0.5 text-xs italic text-muted">“{l.rawText}” · {l.reason}</p>
                   {l.status === 'pending' && (
                     <div className="mt-2 flex items-center justify-between gap-2">
                       <p className="text-sm text-ink/80">Waiting for the HOD to approve.</p>
-                      <button type="button" onClick={() => cancelLeave(l._id)} className="text-xs font-semibold text-clay hover:underline">Cancel request</button>
+                      <button type="button" onClick={() => cancelLeave(l._id)} className="text-xs font-semibold text-clay hover:underline">{l.groupDays > 1 ? `Cancel all ${l.groupDays} days` : 'Cancel request'}</button>
                     </div>
                   )}
                   {l.status === 'declined' && (

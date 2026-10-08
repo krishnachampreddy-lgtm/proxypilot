@@ -6,8 +6,22 @@ import { q } from '../db.js';
 // Needs SMTP_USER (your Gmail) + SMTP_PASS (a Gmail App Password) on the server.
 // ---------------------------------------------------------------
 
+// Brevo (HTTP API) works on hosts that block SMTP ports, like Render's free plan.
+const useBrevo = () => Boolean(process.env.BREVO_API_KEY);
+const fromEmail = () => process.env.EMAIL_FROM || process.env.SMTP_USER;
+
 export function emailEnabled() {
-  return Boolean(process.env.SMTP_USER && process.env.SMTP_PASS);
+  return Boolean((useBrevo() && fromEmail()) || (process.env.SMTP_USER && process.env.SMTP_PASS));
+}
+
+async function sendViaBrevo({ to, subject, text, html }) {
+  const res = await fetch('https://api.brevo.com/v3/smtp/email', {
+    method: 'POST',
+    headers: { 'api-key': process.env.BREVO_API_KEY, 'content-type': 'application/json', accept: 'application/json' },
+    body: JSON.stringify({ sender: { name: 'ProxyPilot', email: fromEmail() }, to: [{ email: to }], subject, textContent: text, htmlContent: html }),
+    signal: AbortSignal.timeout(15000),
+  });
+  if (!res.ok) throw new Error(`Brevo ${res.status}: ${(await res.text()).slice(0, 200)}`);
 }
 
 let transporter;
@@ -19,6 +33,9 @@ async function getTransporter() {
       port: Number(process.env.SMTP_PORT || 465),
       secure: Number(process.env.SMTP_PORT || 465) === 465,
       auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+      connectionTimeout: 10000,
+      greetingTimeout: 10000,
+      socketTimeout: 15000,
     });
   }
   return transporter;
@@ -54,9 +71,7 @@ export async function sendCode(email, purpose) {
     return { ok: false, error: 'Email sending is not set up on the server yet.' };
   }
 
-  const t = await getTransporter();
-  await t.sendMail({
-    from: `"ProxyPilot" <${process.env.SMTP_USER}>`,
+  const mail = {
     to: email,
     subject: SUBJECT[purpose],
     text: `${LINE[purpose]}\n\n${code}\n\nIt expires in ${CODE_MINUTES} minutes. If you did not ask for this, ignore this email.`,
@@ -66,7 +81,9 @@ export async function sendCode(email, purpose) {
       <p style="font-size:32px;font-weight:bold;letter-spacing:8px;margin:16px 0">${code}</p>
       <p style="color:#64748b;font-size:13px">It expires in ${CODE_MINUTES} minutes. If you did not ask for this, ignore this email.</p>
     </div>`,
-  });
+  };
+  if (useBrevo()) await sendViaBrevo(mail);
+  else await (await getTransporter()).sendMail({ ...mail, from: `"ProxyPilot" <${fromEmail()}>` });
   return { ok: true };
 }
 

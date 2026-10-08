@@ -13,43 +13,37 @@ const DEMO = [
   { label: 'Aarav Sharma', role: 'Student · CSE-2A', email: 'aarav@college.edu' },
 ];
 
-const input = 'w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500';
+const input = 'w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-indigo-500';
 const link = 'font-medium text-indigo-600 hover:underline';
+const ROLE = { faculty: 'Faculty', hod: 'HOD', student: 'Student' };
 
-function Notice({ text }) {
-  if (!text) return null;
-  return <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{text}</div>;
+function Avatar({ name, src }) {
+  if (src) return <img src={src} alt="" className="h-9 w-9 rounded-full" referrerPolicy="no-referrer" />;
+  return (
+    <span className="flex h-9 w-9 items-center justify-center rounded-full bg-indigo-100 text-sm font-bold text-indigo-700">
+      {name.trim().charAt(0).toUpperCase()}
+    </span>
+  );
 }
 
 export default function Login() {
-  const { login, setSession } = useAuth();
-  const [mode, setMode] = useState('login'); // login | signup | gmail | forgot
+  const { login, setSession, saved, quickLogin, forget } = useAuth();
   const [config, setConfig] = useState({ googleClientId: null, emailEnabled: false });
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [code, setCode] = useState('');
+  const [codeSent, setCodeSent] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
-
-  // shared form state
-  const [f, setF] = useState({ name: '', email: '', password: '', code: '', role: 'faculty', className: 'CSE-2A', subjects: '' });
-  const [codeSent, setCodeSent] = useState(false);
-  const set = (k) => (e) => setF((s) => ({ ...s, [k]: e.target.value }));
 
   useEffect(() => {
     api.get('/auth/config').then((r) => setConfig(r.data)).catch(() => {});
   }, []);
 
-  const go = (m) => {
-    setMode(m);
-    setError('');
-    setNotice('');
-    setCodeSent(false);
-    setF((s) => ({ ...s, password: '', code: '' }));
-  };
-
   const run = async (fn) => {
     setBusy(true);
     setError('');
-    setNotice('');
     try {
       await fn();
     } catch (err) {
@@ -65,49 +59,33 @@ export default function Login() {
     []
   );
 
-  const sendCode = (purpose) =>
+  const sendOtp = () =>
     run(async () => {
-      await api.post('/auth/email-code', { email: f.email, purpose });
+      if (name.trim().length < 2) throw { response: { data: { error: 'Please enter your name' } } };
+      await api.post('/auth/email-code', { email, purpose: 'login' });
       setCodeSent(true);
-      setNotice(`We sent a 6-digit code to ${f.email}. Check your inbox (and spam).`);
+      setCode('');
+      setNotice(`OTP sent to ${email}. Check your inbox (and spam).`);
     });
 
   const submit = (e) => {
     e.preventDefault();
-    if (mode === 'login') return run(() => login(f.email, f.password));
-    if (mode === 'signup')
-      return run(async () =>
-        setSession(
-          (
-            await api.post('/auth/signup', {
-              name: f.name,
-              email: f.email,
-              password: f.password,
-              role: f.role,
-              className: f.role === 'student' ? f.className : undefined,
-              subjects: f.role === 'faculty' ? f.subjects.split(',').map((s) => s.trim()).filter(Boolean) : undefined,
-            })
-          ).data
-        )
-      );
-    if (mode === 'gmail') {
-      if (!codeSent) return sendCode('login');
-      return run(async () => setSession((await api.post('/auth/email-login', { email: f.email, code: f.code })).data));
-    }
-    if (mode === 'forgot') {
-      if (!codeSent) return sendCode('reset');
-      return run(async () => setSession((await api.post('/auth/reset-password', { email: f.email, code: f.code, password: f.password })).data));
-    }
+    if (!codeSent) return sendOtp();
+    run(async () => setSession((await api.post('/auth/email-login', { email, code, name: name.trim() })).data));
   };
 
-  const demo = (email) => run(() => login(email, 'demo123'));
-
-  const titles = {
-    login: ['Welcome back', 'Log in to ProxyPilot'],
-    signup: ['Create your account', 'For faculty and students'],
-    gmail: ['Continue with Gmail', 'We’ll email you a 6-digit code — no password needed'],
-    forgot: ['Reset your password', 'We’ll email you a code to set a new password'],
-  };
+  const openSaved = (a) =>
+    run(async () => {
+      try {
+        await quickLogin(a);
+      } catch {
+        // session expired: ask for a fresh OTP, details pre-filled
+        setName(a.name);
+        setEmail(a.email);
+        setCodeSent(false);
+        throw { response: { data: { error: `Your session expired. Tap "Send OTP" to sign in again as ${a.name}.` } } };
+      }
+    });
 
   return (
     <div className="grid min-h-screen lg:grid-cols-2">
@@ -131,99 +109,80 @@ export default function Login() {
 
       <div className="flex items-center justify-center p-6">
         <div className="w-full max-w-md space-y-6">
+          {saved.length > 0 && (
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <p className="mb-2 text-sm font-medium text-slate-600">Continue as</p>
+              <div className="space-y-2">
+                {saved.map((a) => (
+                  <div key={a.email} className="flex items-center gap-2">
+                    <button disabled={busy} onClick={() => openSaved(a)} className="flex flex-1 items-center gap-3 rounded-xl border border-slate-200 px-3 py-2 text-left hover:border-indigo-400 hover:bg-indigo-50">
+                      <Avatar name={a.name} src={a.avatar} />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-semibold text-slate-800">{a.name}</span>
+                        <span className="block truncate text-xs text-slate-500">{a.email}{a.role ? ` · ${ROLE[a.role]}` : ''}</span>
+                      </span>
+                    </button>
+                    <button onClick={() => forget(a.email)} title="Remove from this device" className="rounded-lg px-2 py-1 text-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600">×</button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-            <div>
-              <h2 className="text-xl font-semibold text-slate-900">{titles[mode][0]}</h2>
-              <p className="text-sm text-slate-500">{titles[mode][1]}</p>
+            <div className="flex items-center gap-3">
+              <GmailIcon className="h-8 w-8" />
+              <div>
+                <h2 className="text-xl font-semibold text-slate-900">{codeSent ? 'Enter your OTP' : 'Sign in with Gmail'}</h2>
+                <p className="text-sm text-slate-500">{codeSent ? 'We emailed you a 6-digit code' : 'No password — we’ll email you a one-time code'}</p>
+              </div>
             </div>
 
-            {(mode === 'login' || mode === 'signup') && (
-              <>
-                <GoogleButton clientId={config.googleClientId} onCredential={onGoogle} onError={setError} />
-                {config.emailEnabled && <button type="button" onClick={() => go('gmail')} className="flex w-full items-center justify-center gap-3 rounded-full border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50">
-                  <GmailIcon /> Continue with Gmail
-                </button>}
-                <div className="flex items-center gap-3 text-xs uppercase text-slate-400">
-                  <div className="h-px flex-1 bg-slate-200" /> or <div className="h-px flex-1 bg-slate-200" />
-                </div>
-              </>
-            )}
-
             <form onSubmit={submit} className="space-y-3">
-              {mode === 'signup' && <input className={input} placeholder="Full name" value={f.name} onChange={set('name')} />}
-
-              <input className={input} type="email" placeholder={mode === 'gmail' ? 'yourname@gmail.com' : 'Email'} value={f.email} onChange={set('email')} disabled={codeSent} />
-
-              {(mode === 'gmail' || mode === 'forgot') && codeSent && (
-                <input className={`${input} text-center text-lg tracking-[0.5em]`} inputMode="numeric" maxLength={6} placeholder="••••••" value={f.code} onChange={set('code')} autoFocus />
-              )}
-
-              {(mode === 'login' || mode === 'signup' || (mode === 'forgot' && codeSent)) && (
-                <input className={input} type="password" placeholder={mode === 'forgot' ? 'New password (min 6 characters)' : 'Password'} value={f.password} onChange={set('password')} />
-              )}
-
-              {mode === 'login' && config.emailEnabled && (
-                <div className="text-right text-sm">
-                  <button type="button" className={link} onClick={() => go('forgot')}>Forgot password?</button>
-                </div>
-              )}
-
-              {mode === 'signup' && (
+              {!codeSent ? (
                 <>
-                  <div className="grid grid-cols-2 gap-2">
-                    {['faculty', 'student'].map((r) => (
-                      <button type="button" key={r} onClick={() => setF((s) => ({ ...s, role: r }))} className={`rounded-lg border px-3 py-2 text-sm font-medium capitalize ${f.role === r ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-slate-300 text-slate-600'}`}>
-                        I'm {r === 'faculty' ? 'faculty' : 'a student'}
-                      </button>
-                    ))}
-                  </div>
-                  {f.role === 'faculty' ? (
-                    <input className={input} placeholder="Subjects you teach, e.g. DBMS, DSA" value={f.subjects} onChange={set('subjects')} />
-                  ) : (
-                    <select className={input} value={f.className} onChange={set('className')}>
-                      {['CSE-2A', 'CSE-2B', 'CSE-3A', 'CSE-3B'].map((c) => <option key={c}>{c}</option>)}
-                    </select>
-                  )}
+                  <input className={input} placeholder="Your name" value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" />
+                  <input className={input} type="email" placeholder="yourname@gmail.com" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" />
                 </>
+              ) : (
+                <input className={`${input} text-center text-2xl tracking-[0.5em]`} inputMode="numeric" maxLength={6} placeholder="••••••" value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))} autoFocus />
               )}
 
-              <Notice text={notice} />
+              {notice && codeSent && <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{notice}</div>}
               <ErrorBox text={error} />
 
-              <Button type="submit" disabled={busy} className="w-full">
-                {busy
-                  ? 'Please wait…'
-                  : { login: 'Log in', signup: 'Create account', gmail: codeSent ? 'Verify & continue' : 'Send me a code', forgot: codeSent ? 'Set new password' : 'Send reset code' }[mode]}
+              <Button type="submit" disabled={busy || (codeSent && code.length !== 6)} className="w-full">
+                {busy ? 'Please wait…' : codeSent ? 'Verify & sign in' : 'Send OTP'}
               </Button>
 
               {codeSent && (
                 <div className="flex justify-between text-sm">
-                  <button type="button" className={link} onClick={() => { setCodeSent(false); setNotice(''); }}>Change email</button>
-                  <button type="button" className={link} disabled={busy} onClick={() => sendCode(mode === 'gmail' ? 'login' : 'reset')}>Resend code</button>
+                  <button type="button" className={link} onClick={() => { setCodeSent(false); setError(''); }}>Change email</button>
+                  <button type="button" className={link} disabled={busy} onClick={sendOtp}>Resend OTP</button>
                 </div>
               )}
             </form>
 
-            <p className="text-center text-sm text-slate-600">
-              {mode === 'login' ? (
-                <>New here? <button className={link} onClick={() => go('signup')}>Create an account</button></>
-              ) : (
-                <>Back to <button className={link} onClick={() => go('login')}>log in</button></>
-              )}
-            </p>
+            {config.googleClientId && (
+              <>
+                <div className="flex items-center gap-3 text-xs uppercase text-slate-400">
+                  <div className="h-px flex-1 bg-slate-200" /> or <div className="h-px flex-1 bg-slate-200" />
+                </div>
+                <GoogleButton clientId={config.googleClientId} onCredential={onGoogle} onError={setError} />
+              </>
+            )}
           </div>
 
           <div>
             <p className="mb-2 text-sm font-medium text-slate-600">Demo accounts (one click)</p>
             <div className="grid gap-2">
               {DEMO.map((d) => (
-                <button key={d.email} disabled={busy} onClick={() => demo(d.email)} className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-left hover:border-indigo-400 hover:bg-indigo-50">
+                <button key={d.email} disabled={busy} onClick={() => run(() => login(d.email, 'demo123'))} className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-left hover:border-indigo-400 hover:bg-indigo-50">
                   <span className="text-sm font-semibold text-slate-800">{d.label}</span>
                   <span className="text-xs text-slate-500">{d.role}</span>
                 </button>
               ))}
             </div>
-            <p className="mt-2 text-xs text-slate-400">All demo passwords: demo123</p>
           </div>
         </div>
       </div>

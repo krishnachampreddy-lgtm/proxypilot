@@ -102,7 +102,7 @@ The login page has one-click buttons for each.
 
 1. Push this repo to GitHub.
 2. On [render.com](https://render.com): **New → Blueprint** → pick this repo. `render.yaml` creates the web service and a free PostgreSQL database.
-3. Fill in the secret values it asks for: `GEMINI_API_KEY` (free from Google AI Studio), `SMTP_USER` (your Gmail) and `SMTP_PASS` (a Gmail App Password) for OTP emails.
+3. Fill in the secret values it asks for: `GEMINI_API_KEY` (free from Google AI Studio), `SMTP_USER` (the sender Gmail) and `BREVO_API_KEY` (free from brevo.com) for OTP emails — Render's free plan blocks SMTP, so email goes through Brevo's web API.
 4. Click **Apply**. Tables and demo data are created automatically on first start.
 
 The free plan sleeps when idle: open the site a minute before demoing.

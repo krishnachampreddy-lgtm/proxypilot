@@ -7,7 +7,7 @@ const SECRET = () =>
   crypto.createHash('sha256').update(`proxypilot:${process.env.SITE_ID || 'local'}:${process.env.NETLIFY_DB_URL || ''}`).digest('hex');
 
 export function signToken(user) {
-  return jwt.sign({ id: user.id, role: user.role, name: user.name }, SECRET(), { expiresIn: '7d' });
+  return jwt.sign({ id: user.id, role: user.role, name: user.name }, SECRET(), { expiresIn: '30d' });
 }
 
 // Checks the "Authorization: Bearer <token>" header

@@ -95,13 +95,13 @@ router.post('/email-code', validate(z.object({ email, purpose: z.enum(['login', 
   }
 });
 
-router.post('/email-login', validate(z.object({ email, code })), async (req, res) => {
+router.post('/email-login', validate(z.object({ email, code, name: z.string().trim().max(80).optional() })), async (req, res) => {
   if (!(await verifyCode(req.body.email, 'login', req.body.code))) {
     return res.status(401).json({ error: 'That code is wrong or has expired.' });
   }
   let user = await Users.byEmail(req.body.email);
   if (!user) {
-    user = await Users.create({ name: req.body.email.split('@')[0], email: req.body.email, role: 'student', needsProfile: true });
+    user = await Users.create({ name: req.body.name || req.body.email.split('@')[0], email: req.body.email, role: 'student', needsProfile: true });
   }
   session(res, user);
 });

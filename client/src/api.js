@@ -13,7 +13,7 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (res) => res,
   (err) => {
-    if (err.response?.status === 401 && localStorage.getItem('pp_token')) {
+    if (err.response?.status === 401 && localStorage.getItem('pp_token') && !err.config?.url?.startsWith('/auth/')) {
       localStorage.removeItem('pp_token');
       localStorage.removeItem('pp_user');
       window.location.href = '/';

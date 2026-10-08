@@ -76,7 +76,7 @@ To use your own Postgres and Gemini key instead, copy `.env.example` to `.env`, 
 | Dr. Anita Mehta | mehta@college.edu | Apply for leave |
 | Prof. Ravi Rao | rao@college.edu | Get / decline a request |
 | Prof. Farhan Ali | ali@college.edu | Get / accept a request |
-| Dr. Rajesh Kumar | hod@college.edu | HOD dashboard |
+| Rahul Attuluri | hod@college.edu | HOD dashboard |
 | Aarav Sharma | aarav@college.edu | Student timetable (CSE-2A) |
 
 The login page has one-click buttons for each.

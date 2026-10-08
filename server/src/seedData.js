@@ -56,7 +56,7 @@ export async function seedDatabase() {
 
   const faculty = [];
   for (const f of FACULTY) faculty.push(await insertUser({ ...f, role: 'faculty' }));
-  await insertUser({ name: 'Dr. Rajesh Kumar (HOD)', email: 'hod@college.edu', role: 'hod' });
+  await insertUser({ name: 'Rahul Attuluri (HOD)', email: 'hod@college.edu', role: 'hod' });
   await insertUser({ name: 'Aarav Sharma', email: 'aarav@college.edu', role: 'student', className: 'CSE-2A' });
 
   // Build a clash-free weekly timetable

@@ -9,7 +9,7 @@ const DEMO = [
   { label: 'Dr. Anita Mehta', role: 'Faculty · applies leave', email: 'mehta@college.edu' },
   { label: 'Prof. Ravi Rao', role: 'Faculty · gets proxy requests', email: 'rao@college.edu' },
   { label: 'Prof. Farhan Ali', role: 'Faculty · gets proxy requests', email: 'ali@college.edu' },
-  { label: 'Dr. Rajesh Kumar', role: 'HOD · dashboard', email: 'hod@college.edu' },
+  { label: 'Rahul Attuluri', role: 'HOD · dashboard', email: 'hod@college.edu' },
   { label: 'Aarav Sharma', role: 'Student · CSE-2A', email: 'aarav@college.edu' },
 ];
 

@@ -132,7 +132,7 @@ Reply with JSON only: {"items":[{"id":"...","reason":"...","handover":"..."}]}`;
 export function templateNote(i) {
   if (!i.top) return { reason: 'No free teacher found for this period.', handover: '' };
   return {
-    reason: `${i.top.name}: ${i.top.factors.join(', ')}.`,
+    reason: (() => { const t = i.top.factors.join(', '); return `${t.charAt(0).toUpperCase()}${t.slice(1)}.`; })(),
     handover: `Class ${i.className}, ${i.subject} (period ${i.period}).\nContinue from: ${i.topic || 'last topic covered'}.\nStart with a 10-minute recap quiz, then solve 2 examples on the board.`,
   };
 }

@@ -92,6 +92,47 @@ export default function Faculty() {
   };
 
   return (
+    <div className="space-y-6">
+      {requests.waiting.length > 0 && (
+        <section className="rounded-lg border-2 border-brass bg-white/95 p-5 shadow-[0_12px_32px_-18px_rgba(168,122,42,0.6)]">
+          <div className="mb-4 flex items-center gap-3">
+            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-brass font-mono text-sm font-semibold text-ink">{requests.waiting.length}</span>
+            <div>
+              <h2 className="font-display text-xl font-medium text-ink">
+                {requests.waiting.length === 1 ? 'A colleague needs your help' : 'Colleagues need your help'}
+              </h2>
+              <p className="text-sm text-muted">Accept to take the class, or decline and it passes to the next teacher.</p>
+            </div>
+          </div>
+          <div className="grid gap-3 md:grid-cols-2">
+            {requests.waiting.map((p) => (
+              <div key={p._id} className="rounded-md border border-line bg-paper/70 p-4">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <div className="font-display text-lg font-medium text-ink">{p.className} · {p.subject}</div>
+                    <div className="font-mono text-xs text-muted">{p.prettyDate} · P{p.period} · {p.time}</div>
+                  </div>
+                  <span className="rounded bg-brass-soft px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide text-brass-2">Waiting</span>
+                </div>
+                <p className="mt-2 text-sm text-ink/80">Covering for <b>{p.absentFaculty?.name}</b></p>
+                {p.aiReason && <p className="mt-1 text-xs text-brass-2">Why you: {p.aiReason}</p>}
+                {p.handoverNote && (
+                  <div className="mt-2 whitespace-pre-line rounded border border-line bg-white p-2 text-xs text-ink/80">
+                    <b>Handover note</b>
+                    {'\n'}
+                    {p.handoverNote}
+                  </div>
+                )}
+                <div className="mt-3 flex gap-2">
+                  <Button variant="success" onClick={() => respond(p._id, 'accept')}>Accept</Button>
+                  <Button variant="ghost" onClick={() => respond(p._id, 'decline')}>Decline</Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
     <div className="grid gap-6 lg:grid-cols-5">
       <div className="space-y-6 lg:col-span-3">
         <Card title="Apply for leave" subtitle="Pick a date on the calendar, or just write it like a WhatsApp message.">
@@ -223,36 +264,11 @@ export default function Faculty() {
       </div>
 
       <div className="space-y-6 lg:col-span-2">
-        <Card title="Proxy requests for you" subtitle="Updates every few seconds" right={requests.waiting.length ? <span className="rounded-full bg-brass-soft0 px-2 py-0.5 text-xs font-bold text-white">{requests.waiting.length}</span> : null}>
-          {requests.waiting.length === 0 ? (
+        {requests.waiting.length === 0 && (
+          <Card title="Proxy requests for you" subtitle="When a colleague is on leave and you are the best fit, the request shows up here.">
             <Empty>No requests right now.</Empty>
-          ) : (
-            <div className="space-y-3">
-              {requests.waiting.map((p) => (
-                <div key={p._id} className="rounded-md border border-brass/40 bg-brass-soft p-3">
-                  <div className="text-sm font-semibold text-ink">
-                    {p.prettyDate} · Period {p.period} ({p.time})
-                  </div>
-                  <div className="text-sm text-ink/80">
-                    {p.className} · {p.subject} — for {p.absentFaculty?.name}
-                  </div>
-                  {p.aiReason && <p className="mt-1 text-xs text-brass-2">Why you: {p.aiReason}</p>}
-                  {p.handoverNote && (
-                    <div className="mt-2 whitespace-pre-line rounded-lg bg-white p-2 text-xs text-ink/80">
-                      <b>Handover note</b>
-                      {'\n'}
-                      {p.handoverNote}
-                    </div>
-                  )}
-                  <div className="mt-3 flex gap-2">
-                    <Button variant="success" onClick={() => respond(p._id, 'accept')}>Accept</Button>
-                    <Button variant="ghost" onClick={() => respond(p._id, 'decline')}>Decline</Button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </Card>
+          </Card>
+        )}
 
         <Card title="My upcoming proxies">
           {requests.accepted.length === 0 ? (
@@ -268,6 +284,7 @@ export default function Faculty() {
           )}
         </Card>
       </div>
+    </div>
     </div>
   );
 }

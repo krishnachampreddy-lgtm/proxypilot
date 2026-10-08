@@ -5,37 +5,33 @@ import { todayIST, monthStart } from './services/dates.js';
 // Fake but realistic demo data. Every account's password is: demo123
 export const DEMO_PASSWORD = 'demo123';
 
+// The five subjects ProxyPilot supports
+export const SUBJECTS = ['English', 'DBMS', 'Python', 'DSA', 'Aptitude'];
+
 const FACULTY = [
-  { name: 'Dr. Anita Mehta', email: 'mehta@college.edu', subjects: ['DBMS', 'Software Engg'] },
-  { name: 'Prof. Ravi Rao', email: 'rao@college.edu', subjects: ['DBMS', 'Web Tech', 'Web Lab'] },
-  { name: 'Dr. Sunil Iyer', email: 'iyer@college.edu', subjects: ['Operating Systems', 'Computer Networks'] },
-  { name: 'Prof. Kavya Nair', email: 'nair@college.edu', subjects: ['DSA', 'AI', 'DSA Lab'] },
-  { name: 'Dr. Arjun Singh', email: 'singh@college.edu', subjects: ['Maths-III', 'Compiler Design'] },
-  { name: 'Prof. Meera Joshi', email: 'joshi@college.edu', subjects: ['COA', 'Computer Networks'] },
-  { name: 'Prof. Farhan Ali', email: 'ali@college.edu', subjects: ['DSA', 'Web Tech', 'DSA Lab', 'Web Lab'] },
-  { name: 'Dr. Priya Das', email: 'das@college.edu', subjects: ['Operating Systems', 'AI'] },
+  { name: 'Dr. Anita Mehta', email: 'mehta@college.edu', subjects: ['DBMS', 'Python'] },
+  { name: 'Prof. Ravi Rao', email: 'rao@college.edu', subjects: ['DBMS', 'DSA'] },
+  { name: 'Dr. Sunil Iyer', email: 'iyer@college.edu', subjects: ['English', 'Aptitude'] },
+  { name: 'Prof. Kavya Nair', email: 'nair@college.edu', subjects: ['DSA', 'Python'] },
+  { name: 'Dr. Arjun Singh', email: 'singh@college.edu', subjects: ['Aptitude', 'DSA'] },
+  { name: 'Prof. Meera Joshi', email: 'joshi@college.edu', subjects: ['English'] },
+  { name: 'Prof. Farhan Ali', email: 'ali@college.edu', subjects: ['Python', 'DSA'] },
+  { name: 'Dr. Priya Das', email: 'das@college.edu', subjects: ['DBMS', 'Aptitude'] },
 ];
 
 const CLASSES = [
-  { name: 'CSE-2A', subjects: ['DBMS', 'Operating Systems', 'DSA', 'Maths-III', 'COA', 'DSA Lab'] },
-  { name: 'CSE-2B', subjects: ['DBMS', 'Operating Systems', 'DSA', 'Maths-III', 'COA', 'DSA Lab'] },
-  { name: 'CSE-3A', subjects: ['Computer Networks', 'AI', 'Software Engg', 'Compiler Design', 'Web Tech', 'Web Lab'] },
-  { name: 'CSE-3B', subjects: ['Computer Networks', 'AI', 'Software Engg', 'Compiler Design', 'Web Tech', 'Web Lab'] },
+  { name: 'CSE-2A', subjects: SUBJECTS },
+  { name: 'CSE-2B', subjects: SUBJECTS },
+  { name: 'CSE-3A', subjects: SUBJECTS },
+  { name: 'CSE-3B', subjects: SUBJECTS },
 ];
 
 const TOPICS = {
+  English: 'Business letters and email etiquette',
   DBMS: 'Normalization — 2NF and 3NF',
-  'Operating Systems': 'CPU scheduling — Round Robin',
+  Python: 'Functions, *args and **kwargs',
   DSA: 'Binary search trees — deletion',
-  'Maths-III': 'Laplace transforms — inverse',
-  COA: 'Pipelining and hazards',
-  'DSA Lab': 'Lab 6 — BST implementation',
-  'Computer Networks': 'TCP congestion control',
-  AI: 'A* search and heuristics',
-  'Software Engg': 'UML use-case diagrams',
-  'Compiler Design': 'LL(1) parsing tables',
-  'Web Tech': 'React components and props',
-  'Web Lab': 'Lab 5 — REST API with Express',
+  Aptitude: 'Time and work problems',
 };
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -71,7 +67,7 @@ export async function seedDatabase() {
     for (let period = 1; period <= 6; period++) {
       const busy = new Set();
       CLASSES.forEach((cls, c) => {
-        const start = (period - 1 + d * 2 + c) % 6;
+        const start = (period - 1 + d * 2 + c) % cls.subjects.length;
         const order = [...cls.subjects.slice(start), ...cls.subjects.slice(0, start)];
         for (const subject of order) {
           const options = faculty

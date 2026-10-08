@@ -9,21 +9,14 @@ const EXAMPLES = [
   'Attending a workshop today, please cover my classes after lunch (period 5-6).',
 ];
 
-function Candidates({ list }) {
-  if (!list?.length) return null;
-  return (
-    <details className="mt-2 text-xs text-ink/80">
-      <summary className="cursor-pointer text-brass-2">See ranking ({list.length} free teachers)</summary>
-      <ol className="mt-2 space-y-1">
-        {list.slice(0, 5).map((c, i) => (
-          <li key={i} className="flex justify-between gap-2 rounded bg-paper px-2 py-1">
-            <span><b>{i + 1}. {c.faculty?.name}</b> — {c.factors.join(', ')}</span>
-            <span className="font-mono text-muted">{c.score}</span>
-          </li>
-        ))}
-      </ol>
-    </details>
-  );
+const LEAVE_STATUS = {
+  pending: ['Awaiting HOD', 'bg-brass-soft text-brass-2'],
+  approved: ['Approved', 'bg-sage-soft text-sage'],
+  declined: ['Declined', 'bg-clay-soft text-clay'],
+};
+function LeaveStatus({ status }) {
+  const [label, cls] = LEAVE_STATUS[status] || LEAVE_STATUS.approved;
+  return <span className={`rounded px-2 py-0.5 font-mono text-[11px] font-medium uppercase tracking-wide ${cls}`}>{label}</span>;
 }
 
 export default function Faculty() {
@@ -208,27 +201,12 @@ export default function Faculty() {
           </form>
 
           {result && (
-            <div className="mt-5 space-y-3 rounded-md border border-brass bg-brass-soft/60 p-4">
-              <div className="flex flex-wrap items-center gap-2 text-sm">
-                <span className="text-ink/80">
-                  Understood: <b>{result.understood.prettyDate}</b> · periods <b>{result.understood.periods.join(', ')}</b> · {result.understood.reason}
-                </span>
-              </div>
-              {result.proxies.map((p) => (
-                <div key={p._id} className="rounded-lg bg-white p-3 shadow-sm">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-semibold text-ink">
-                      Period {p.period} · {p.className} · {p.subject}
-                    </span>
-                    <StatusBadge status={p.status} />
-                  </div>
-                  <p className="mt-1 text-sm text-ink/80">
-                    {p.offeredTo ? <>Request sent to <b>{p.offeredTo.name}</b></> : 'No free teacher found'}
-                  </p>
-                  {p.aiReason && <p className="mt-1 text-xs text-brass-2">{p.aiReason}</p>}
-                  <Candidates list={p.candidates} />
-                </div>
-              ))}
+            <div className="mt-5 rounded-md border border-brass bg-brass-soft/60 p-4">
+              <p className="font-display text-lg font-medium text-ink">Sent to the HOD for approval</p>
+              <p className="mt-1 text-sm text-ink/80">
+                <b>{result.understood.prettyDate}</b> · period {result.understood.periods.join(', ')} · {result.understood.reason}
+              </p>
+              <p className="mt-2 text-xs text-muted">Once the HOD approves, substitutes are arranged for your classes. You can follow it under “My leaves”.</p>
             </div>
           )}
         </Card>
@@ -240,11 +218,17 @@ export default function Faculty() {
             <div className="space-y-4">
               {leaves.map((l) => (
                 <div key={l._id} className="rounded-md border border-line p-3">
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between gap-2">
                     <span className="font-semibold text-ink">{l.prettyDate}</span>
-                    <span className="text-xs text-muted">{l.reason}</span>
+                    <LeaveStatus status={l.status} />
                   </div>
-                  <p className="mt-1 text-xs italic text-muted">“{l.rawText}”</p>
+                  <p className="mt-1 text-xs italic text-muted">“{l.rawText}” · {l.reason}</p>
+                  {l.status === 'pending' && <p className="mt-2 text-sm text-ink/80">Waiting for the HOD to approve. Period {l.periods?.join(', ')}.</p>}
+                  {l.status === 'declined' && (
+                    <div className="mt-2 rounded border border-clay/30 bg-clay-soft px-3 py-2 text-sm text-clay">
+                      <b>HOD’s reason:</b> {l.hodNote}
+                    </div>
+                  )}
                   <ul className="mt-2 divide-y divide-line/70">
                     {l.proxies.map((p) => (
                       <li key={p._id} className="flex items-center justify-between py-1.5 text-sm">

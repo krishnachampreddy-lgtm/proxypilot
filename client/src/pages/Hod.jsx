@@ -17,6 +17,70 @@ function Stat({ label, value, tone }) {
   );
 }
 
+function LeaveRequest({ l, onDone, onError }) {
+  const [declining, setDeclining] = useState(false);
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const decide = async (action) => {
+    setBusy(true);
+    try {
+      await api.post(`/hod/leaves/${l._id}/decide`, { action, note });
+      onDone();
+    } catch (err) {
+      onError(errorText(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="rounded-md border border-line bg-paper/70 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="font-display text-lg font-medium text-ink">{l.facultyName}</div>
+          <div className="font-mono text-xs text-muted">{l.prettyDate} · {l.reason}</div>
+        </div>
+        <span className="rounded bg-brass-soft px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide text-brass-2">New</span>
+      </div>
+      <p className="mt-2 text-sm italic text-ink/70">“{l.rawText}”</p>
+      {l.classes.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {l.classes.map((c) => (
+            <span key={c.period} className="rounded border border-line bg-white px-2 py-0.5 font-mono text-[11px] text-ink/80">
+              P{c.period} · {c.className} · {c.subject}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {declining ? (
+        <div className="mt-3 space-y-2">
+          <textarea
+            rows={2}
+            autoFocus
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="Why are you declining? e.g. Internal exams that week — please reschedule."
+            className="w-full rounded-md border border-line bg-white p-2.5 text-sm outline-none focus:border-ink"
+          />
+          <div className="flex gap-2">
+            <Button variant="ghost" className="!border-clay !text-clay" disabled={busy || note.trim().length < 3} onClick={() => decide('decline')}>
+              {busy ? 'Saving…' : 'Decline with reason'}
+            </Button>
+            <Button variant="ghost" disabled={busy} onClick={() => { setDeclining(false); setNote(''); }}>Cancel</Button>
+          </div>
+        </div>
+      ) : (
+        <div className="mt-3 flex gap-2">
+          <Button variant="success" disabled={busy} onClick={() => decide('approve')}>{busy ? 'Approving…' : 'Approve'}</Button>
+          <Button variant="ghost" disabled={busy} onClick={() => setDeclining(true)}>Decline</Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function LoadChart({ data }) {
   const max = Math.max(1, ...data.map((d) => d.count));
   const avg = data.reduce((s, d) => s + d.count, 0) / (data.length || 1);
@@ -97,6 +161,23 @@ export default function Hod() {
         <Button variant="ghost" onClick={reset}>Reset demo data</Button>
       </div>
       <ErrorBox text={error} />
+
+      {data.leaveRequests.length > 0 && (
+        <section className="rounded-lg border-2 border-brass bg-white/95 p-5 shadow-[0_12px_32px_-18px_rgba(168,122,42,0.6)]">
+          <div className="mb-4 flex items-center gap-3">
+            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-brass font-mono text-sm font-semibold text-ink">{data.leaveRequests.length}</span>
+            <div>
+              <h2 className="font-display text-xl font-medium text-ink">Leave requests</h2>
+              <p className="text-sm text-muted">Approve to arrange substitutes automatically. Declining needs a reason, which the teacher will see.</p>
+            </div>
+          </div>
+          <div className="grid gap-3 md:grid-cols-2">
+            {data.leaveRequests.map((l) => (
+              <LeaveRequest key={l._id} l={l} onDone={load} onError={setError} />
+            ))}
+          </div>
+        </section>
+      )}
 
       <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
         <Stat label="Teachers on leave" value={stats.teachersOnLeave} tone="slate" />

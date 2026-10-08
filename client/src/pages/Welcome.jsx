@@ -4,14 +4,15 @@ import api, { errorText } from '../api';
 import { Logo } from '../components/Layout.jsx';
 import { Button, ErrorBox } from '../components/ui.jsx';
 
-const input = 'w-full rounded-lg border border-line px-3 py-2 text-sm outline-none focus:border-brass';
+const input = 'w-full rounded-md border border-line px-3 py-2 text-sm outline-none focus:border-ink';
+const SUBJECTS = ['English', 'DBMS', 'Python', 'DSA', 'Aptitude'];
 
 // First sign-in with Google / Gmail: choose faculty or student
 export default function Welcome() {
   const { user, setSession, logout } = useAuth();
   const [name, setName] = useState(user.name);
   const [role, setRole] = useState('faculty');
-  const [subjects, setSubjects] = useState('');
+  const [subjects, setSubjects] = useState([]);
   const [className, setClassName] = useState('CSE-2A');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -25,7 +26,7 @@ export default function Welcome() {
         name,
         role,
         className: role === 'student' ? className : undefined,
-        subjects: role === 'faculty' ? subjects.split(',').map((s) => s.trim()).filter(Boolean) : undefined,
+        subjects: role === 'faculty' ? subjects : undefined,
       });
       setSession(data);
     } catch (err) {
@@ -55,14 +56,31 @@ export default function Welcome() {
           ))}
         </div>
         {role === 'faculty' ? (
-          <input className={input} placeholder="Subjects you teach, e.g. DBMS, DSA" value={subjects} onChange={(e) => setSubjects(e.target.value)} />
+          <div>
+            <p className="mb-2 font-mono text-[11px] uppercase tracking-wider text-muted">Subjects you teach (pick one or more)</p>
+            <div className="flex flex-wrap gap-2">
+              {SUBJECTS.map((sub) => {
+                const on = subjects.includes(sub);
+                return (
+                  <button
+                    type="button"
+                    key={sub}
+                    onClick={() => setSubjects((s) => (on ? s.filter((x) => x !== sub) : [...s, sub]))}
+                    className={`rounded-md border px-3 py-1.5 text-sm font-medium transition ${on ? 'border-ink bg-ink text-paper' : 'border-line bg-white text-ink/80 hover:border-ink/40'}`}
+                  >
+                    {sub}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         ) : (
           <select className={input} value={className} onChange={(e) => setClassName(e.target.value)}>
             {['CSE-2A', 'CSE-2B', 'CSE-3A', 'CSE-3B'].map((c) => <option key={c}>{c}</option>)}
           </select>
         )}
         <ErrorBox text={error} />
-        <Button type="submit" disabled={busy} className="w-full">{busy ? 'Saving…' : 'Continue'}</Button>
+        <Button type="submit" disabled={busy || (role === 'faculty' && subjects.length === 0)} className="w-full">{busy ? 'Saving…' : 'Continue'}</Button>
         <button type="button" onClick={logout} className="w-full text-sm text-muted hover:underline">Use a different account</button>
       </form>
     </div>

@@ -3,8 +3,7 @@ import { z } from 'zod';
 import { Leaves, Proxies, Timetable, Users, hydrateProxies } from '../db.js';
 import { ensureStarterTimetable } from '../services/starterTimetable.js';
 import { requireAuth, requireRole, validate } from '../middleware/auth.js';
-import { parseLeave, explainAndHandover, templateNote } from '../services/ai.js';
-import { rankCandidates } from '../services/matching.js';
+import { parseLeave } from '../services/ai.js';
 import { todayIST, weekday, prettyDate, addDays, PERIOD_TIMES } from '../services/dates.js';
 
 const router = Router();
@@ -19,8 +18,8 @@ const LeaveBody = z
   .refine((b) => b.date || b.text.length >= 5, { message: 'Pick a date on the calendar or describe your leave' });
 
 /**
- * The whole automation in one request:
- * free text -> AI reads it -> classes found -> substitutes ranked -> AI reason + handover -> requests sent
+ * Apply for leave: free text or a calendar date -> classes found -> sent to the HOD for approval.
+ * After approval, services/cover.js ranks substitutes and sends the requests.
  */
 router.post('/', validate(LeaveBody), async (req, res) => {
   const today = todayIST();
@@ -63,64 +62,16 @@ router.post('/', validate(LeaveBody), async (req, res) => {
     aiUsed: parsed.aiUsed,
   });
 
-  // 3. Rank substitutes for every class, one by one
-  const proxies = [];
-  const aiInput = [];
-  for (const c of affected) {
-    const ranked = await rankCandidates({
-      date: parsed.date,
-      day,
-      period: c.period,
-      className: c.class_name,
-      subject: c.subject,
-      absentFacultyId: req.user.id,
-    });
-    const top = ranked[0];
-    const proxy = await Proxies.create({
-      leaveId: leave.id,
-      date: parsed.date,
-      day,
-      period: c.period,
-      className: c.class_name,
-      subject: c.subject,
-      currentTopic: c.current_topic,
-      absentFacultyId: req.user.id,
-      candidates: ranked.map(({ faculty, score, factors }) => ({ faculty, score, factors })),
-      offeredTo: top?.faculty,
-      status: top ? 'pending' : 'uncovered',
-      history: top ? [{ faculty: top.faculty, action: 'offered', at: new Date().toISOString() }] : [],
-    });
-    proxies.push(proxy);
-    aiInput.push({
-      id: String(proxy.id),
-      className: c.class_name,
-      subject: c.subject,
-      period: c.period,
-      topic: c.current_topic,
-      absentName: req.user.name,
-      top: top ? { name: top.name, factors: top.factors } : null,
-    });
-  }
-
-  // 4. AI explains each pick and writes the handover note
-  const notes = await explainAndHandover(aiInput);
-  for (const [i, proxy] of proxies.entries()) {
-    const note = notes[String(proxy.id)] || templateNote(aiInput[i]);
-    proxy.ai_reason = note.reason;
-    proxy.handover_note = note.handover;
-    await Proxies.save(proxy);
-  }
-
+  // 3. Goes to the HOD first; cover is arranged only after approval
   res.status(201).json({
     leave: { ...leave, _id: leave.id },
+    status: 'pending',
     understood: {
       date: parsed.date,
       prettyDate: prettyDate(parsed.date),
       periods: leave.periods,
       reason: parsed.reason,
-      aiUsed: parsed.aiUsed,
     },
-    proxies: await hydrateProxies(await Proxies.where('leave_id = $1 ORDER BY period', [leave.id])),
   });
 });
 
@@ -131,7 +82,7 @@ router.get('/schedule', async (req, res) => {
   res.json({
     today: todayIST(),
     classes: classes.map((c) => ({ day: c.day, period: c.period, time: PERIOD_TIMES[c.period], className: c.class_name, subject: c.subject })),
-    leaveDates: leaves.map((l) => l.date),
+    leaveDates: leaves.filter((l) => l.status !== 'declined').map((l) => l.date),
   });
 });
 
@@ -147,6 +98,9 @@ router.get('/mine', async (req, res) => {
       prettyDate: prettyDate(l.date),
       rawText: l.raw_text,
       reason: l.reason,
+      periods: l.periods,
+      status: l.status,
+      hodNote: l.hod_note,
       proxies: proxies.filter((p) => p.leave === l.id),
     })),
   });

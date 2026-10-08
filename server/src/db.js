@@ -96,21 +96,33 @@ export const Timetable = {
 // ---------------- Leaves ----------------
 
 export const Leaves = {
-  exists: async (fid, date) => (await q('SELECT 1 FROM leaves WHERE faculty_id = $1 AND date = $2', [fid, date])).length > 0,
+  // a declined leave does not block applying again for the same day
+  exists: async (fid, date) =>
+    (await q(`SELECT 1 FROM leaves WHERE faculty_id = $1 AND date = $2 AND status <> 'declined'`, [fid, date])).length > 0,
   create: async (l) =>
     (
       await q(
-        `INSERT INTO leaves (faculty_id, date, raw_text, reason, periods, ai_used)
-         VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+        `INSERT INTO leaves (faculty_id, date, raw_text, reason, periods, ai_used, status)
+         VALUES ($1,$2,$3,$4,$5,$6,'pending') RETURNING *`,
         [l.facultyId, l.date, l.rawText, l.reason, l.periods, l.aiUsed]
       )
     )[0],
-  byFaculty: (fid) => q('SELECT * FROM leaves WHERE faculty_id = $1 ORDER BY date DESC', [fid]),
-  facultyOnDate: async (date) => (await q('SELECT DISTINCT faculty_id FROM leaves WHERE date = $1', [date])).map((r) => r.faculty_id),
+  byId: async (id) => (await q('SELECT * FROM leaves WHERE id = $1', [id]))[0],
+  decide: async (id, status, note) =>
+    (await q(`UPDATE leaves SET status = $2, hod_note = $3, decided_at = NOW() WHERE id = $1 RETURNING *`, [id, status, note ?? null]))[0],
+  byFaculty: (fid) => q('SELECT * FROM leaves WHERE faculty_id = $1 ORDER BY date DESC, id DESC', [fid]),
+  // only approved leave makes a teacher unavailable as a substitute
+  facultyOnDate: async (date) =>
+    (await q(`SELECT DISTINCT faculty_id FROM leaves WHERE date = $1 AND status = 'approved'`, [date])).map((r) => r.faculty_id),
+  pending: () =>
+    q(
+      `SELECT l.*, u.name AS faculty_name, u.subjects AS faculty_subjects FROM leaves l JOIN users u ON u.id = l.faculty_id
+       WHERE l.status = 'pending' ORDER BY l.date, l.id`
+    ),
   upcoming: (today) =>
     q(
       `SELECT l.*, u.name AS faculty_name FROM leaves l JOIN users u ON u.id = l.faculty_id
-       WHERE l.date >= $1 ORDER BY l.date`,
+       WHERE l.date >= $1 AND l.status = 'approved' ORDER BY l.date`,
       [today]
     ),
 };

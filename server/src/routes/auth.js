@@ -5,6 +5,7 @@ import { Users } from '../db.js';
 import { requireAuth, signToken, validate } from '../middleware/auth.js';
 import { emailEnabled, sendCode, verifyCode } from '../services/email.js';
 import { ensureStarterTimetable } from '../services/starterTimetable.js';
+import { SUBJECTS } from '../seedData.js';
 
 const router = Router();
 
@@ -37,7 +38,7 @@ const SignupBody = z.object({
   password,
   role: z.enum(['faculty', 'student']),
   className: z.string().trim().max(20).optional(),
-  subjects: z.array(z.string().trim().min(1).max(40)).max(6).optional(),
+  subjects: z.array(z.enum(SUBJECTS)).max(5).optional(),
 });
 
 router.post('/signup', validate(SignupBody), async (req, res) => {
@@ -120,12 +121,14 @@ router.post('/reset-password', validate(z.object({ email, code, password })), as
 
 // ---------- New Google / Gmail users pick their role ----------
 
-const ProfileBody = z.object({
-  name: z.string().trim().min(2, 'Enter your name').max(80),
-  role: z.enum(['faculty', 'student']),
-  className: z.string().trim().max(20).optional(),
-  subjects: z.array(z.string().trim().min(1).max(40)).max(6).optional(),
-});
+const ProfileBody = z
+  .object({
+    name: z.string().trim().min(2, 'Enter your name').max(80),
+    role: z.enum(['faculty', 'student']),
+    className: z.string().trim().max(20).optional(),
+    subjects: z.array(z.enum(SUBJECTS, { message: `Subjects must be from: ${SUBJECTS.join(', ')}` })).max(5).optional(),
+  })
+  .refine((b) => b.role !== 'faculty' || (b.subjects && b.subjects.length > 0), { message: 'Pick at least one subject you teach' });
 
 router.post('/complete-profile', requireAuth, validate(ProfileBody), async (req, res) => {
   const user = await Users.byId(req.user.id);

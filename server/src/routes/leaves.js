@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { Leaves, Proxies, Timetable, hydrateProxies } from '../db.js';
+import { Leaves, Proxies, Timetable, Users, hydrateProxies } from '../db.js';
+import { ensureStarterTimetable } from '../services/starterTimetable.js';
 import { requireAuth, requireRole, validate } from '../middleware/auth.js';
 import { parseLeave, explainAndHandover, templateNote } from '../services/ai.js';
 import { rankCandidates } from '../services/matching.js';
@@ -19,6 +20,7 @@ const LeaveBody = z.object({
  */
 router.post('/', validate(LeaveBody), async (req, res) => {
   const today = todayIST();
+  await ensureStarterTimetable(await Users.byId(req.user.id));
   const myClasses = await Timetable.byFaculty(req.user.id);
   const scheduleText = myClasses.map((c) => `${c.day} P${c.period} ${c.class_name} ${c.subject}`).join('; ');
 
@@ -112,6 +114,7 @@ router.post('/', validate(LeaveBody), async (req, res) => {
 
 // My leaves and how each class is being covered
 router.get('/mine', async (req, res) => {
+  await ensureStarterTimetable(await Users.byId(req.user.id));
   const leaves = await Leaves.byFaculty(req.user.id);
   const proxies = await hydrateProxies(await Proxies.where('absent_faculty_id = $1 ORDER BY period', [req.user.id]));
   res.json({

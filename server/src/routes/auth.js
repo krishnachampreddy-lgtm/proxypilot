@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { Users } from '../db.js';
 import { requireAuth, signToken, validate } from '../middleware/auth.js';
 import { emailEnabled, sendCode, verifyCode } from '../services/email.js';
+import { ensureStarterTimetable } from '../services/starterTimetable.js';
 
 const router = Router();
 
@@ -136,6 +137,7 @@ router.post('/complete-profile', requireAuth, validate(ProfileBody), async (req,
     subjects: req.body.role === 'faculty' ? req.body.subjects || [] : [],
     needs_profile: false,
   });
+  await ensureStarterTimetable(updated);
   session(res, updated);
 });
 

@@ -100,6 +100,9 @@ export function createPost(renderer, scene, camera, P) {
       return true;
     },
     setSize(w, h) {
+      // the composer keeps its own pixel ratio: follow the renderer's, or lowering
+      // the resolution would only shrink the canvas while the scene still renders full size
+      composer.setPixelRatio(renderer.getPixelRatio());
       composer.setSize(w, h);
       const s = renderer.getDrawingBufferSize(new THREE.Vector2());
       ao?.setSize(s.x, s.y);

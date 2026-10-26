@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import CampusScene, { timeOfDayNow } from '../components/campus/CampusScene.jsx';
-import { STOPS } from '../components/campus/buildCampus.js';
+import { STOPS } from '../campus/stops.js';
 import { createSoundscape } from '../components/campus/sound.js';
 import InstallButton from '../components/InstallButton.jsx';
 import { Logo } from '../components/Layout.jsx';
@@ -55,6 +55,7 @@ export default function Home() {
   const [time, setTime] = useState(timeOfDayNow);
   const [stop, setStop] = useState(null); // index of the tour stop, or null
   const [soundOn, setSoundOn] = useState(false);
+  const [progress, setProgress] = useState(0);
   const scene = useRef(null);
   const audio = useRef(null);
 
@@ -101,7 +102,16 @@ export default function Home() {
     <div className="min-h-screen bg-paper text-ink">
       {/* ---------- living campus ---------- */}
       <section className="relative h-[100svh] min-h-[600px] overflow-hidden">
-        <CampusScene ref={scene} mode="hero" time={time} className="absolute inset-0" />
+        <CampusScene ref={scene} time={time} className="absolute inset-0" onProgress={setProgress} />
+        {progress > 0 && progress < 1 && (
+          <div className="pointer-events-none absolute left-1/2 top-20 z-10 -translate-x-1/2 sm:top-24">
+            <div className="glass flex items-center gap-3 rounded-full px-4 py-2 font-mono text-[10px] uppercase tracking-[0.16em] text-ink/80">
+              <span>Opening the school gates</span>
+              <span className="h-1 w-24 overflow-hidden rounded-full bg-ink/15"><span className="block h-full bg-brass transition-all" style={{ width: `${Math.round(progress * 100)}%` }} /></span>
+              <span>{Math.round(progress * 100)}%</span>
+            </div>
+          </div>
+        )}
         <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(5,8,7,0.45)_0%,transparent_22%,transparent_50%,rgba(5,8,7,0.7)_100%)]" />
 
         <nav className="absolute inset-x-0 top-0 z-10 flex items-center justify-between gap-2 px-4 py-4 sm:px-8 sm:py-6">

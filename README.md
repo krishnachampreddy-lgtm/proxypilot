@@ -143,6 +143,28 @@ With `EMAIL_DEV_LOG=1`, OTP codes are printed in the terminal instead of emailed
 
 The free plan sleeps after 15 idle minutes; the **Keep site awake** GitHub Action pings `/api/health` every 10 minutes to prevent that. You can also run it manually from the repo's **Actions** tab.
 
+## The 3D campus
+
+The home page opens on a live, realistic Indian school campus rendered in the browser with three.js:
+
+- U-shaped three-storey school with open verandah corridors, columns, parapets and railings, classroom doors, grilled windows, concrete sunshades, weathered cream-and-maroon plaster, a terrace with water tanks and solar panels, a clock tower and an entrance porch
+- assembly courtyard with the national flag, students in uniform lined up in the morning and walking home in the evening, teachers in the corridors
+- library with a Mangalore-tile roof, basketball court, running track and football pitch, bicycle stand, bus bay with school buses, coconut palms and shade trees moving in the wind
+- the road outside with black-and-yellow kerbs, a zebra crossing, traffic, auto-rickshaws, electric poles with sagging wires, and the town stretching to the horizon
+- physical sky and sunlight, image-based lighting, soft shadows, ambient occlusion, bloom and filmic tone mapping; morning and evening, sound, and a 7-stop guided tour
+
+The app screens use rendered photos of the same campus (`client/public/campus/stills`) so they stay light on phones. Open `/?still=morning` or `/?still=evening` to re-render them.
+
+Code: `client/src/campus/`. Devices get a quality level automatically (`?q=high|medium|low` to force one).
+
+### Asset credits
+
+- Trees: [EZ-Tree](https://github.com/dgreenheck/ez-tree) by Daniel Greenheck (MIT) — vendored in `client/src/campus/vendor/ez-tree`
+- Animated figure (Xbot), Parrot and Stork models, brick, wood and grass textures, lens flare: from the [three.js examples](https://github.com/mrdoob/three.js/tree/dev/examples) (MIT; Xbot originally from Mixamo)
+- Cloud sprite: [pmndrs/drei-assets](https://github.com/pmndrs/drei-assets)
+- Plaster, concrete, asphalt, pavers, track, tiles, roof tiles, palm and weathering textures: generated for this project
+- Ambient occlusion: [N8AO](https://github.com/N8python/n8ao) (ISC)
+
 ## Future scope
 
 WhatsApp bot for leave and replies · exam invigilation duty allocation with the same engine · syllabus tracking for richer handover notes · multi-department support.

@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '../auth.jsx';
 import api, { errorText } from '../api';
 import { Logo } from '../components/Layout.jsx';
-import CampusScene, { timeOfDayNow } from '../components/campus/CampusScene.jsx';
+import { CampusBackdrop, timeOfDayNow } from '../components/campus/CampusScene.jsx';
 import { Button, ErrorBox } from '../components/ui.jsx';
 
 const DEMO = [
@@ -84,7 +84,7 @@ export default function Login() {
 
   return (
     <div className="relative min-h-screen overflow-hidden bg-paper text-ink">
-      <CampusScene mode="ambient" time={timeOfDayNow()} className="fixed inset-0" />
+      <CampusBackdrop time={timeOfDayNow()} drift className="fixed inset-0" />
       {/* soft wash so text stays readable over the campus */}
       <div className="pointer-events-none fixed inset-0 bg-[linear-gradient(90deg,rgba(5,8,7,0.82)_0%,rgba(5,8,7,0.45)_55%,rgba(5,8,7,0.6)_100%)]" />
 

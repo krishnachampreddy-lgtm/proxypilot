@@ -54,6 +54,10 @@ body {
     linear-gradient(180deg, #16263a 0%, #1d3a2e 55%, #0a120e 100%);
 }
 
+/* the campus photo behind the app drifts very slowly, like a camera on a crane */
+@keyframes campus-drift { from { transform: scale(1.04) translate3d(0, 0, 0); } to { transform: scale(1.12) translate3d(-1.5%, -1%, 0); } }
+.campus-drift { animation: campus-drift 60s ease-in-out infinite alternate; }
+
 input, textarea, select { color-scheme: dark; }
 input::placeholder, textarea::placeholder { color: rgb(148 165 155 / 0.75); }
 

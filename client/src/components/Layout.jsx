@@ -1,5 +1,5 @@
 import { useAuth } from '../auth.jsx';
-import CampusScene, { timeOfDayNow } from './campus/CampusScene.jsx';
+import { CampusBackdrop, timeOfDayNow } from './campus/CampusScene.jsx';
 import NotificationBell from './NotificationBell.jsx';
 import InstallButton from './InstallButton.jsx';
 
@@ -32,7 +32,7 @@ export default function Layout({ children }) {
   return (
     <div className="relative min-h-screen">
       {/* the school campus slowly circles behind the app; a dark wash keeps text readable */}
-      <CampusScene mode="ambient" time={timeOfDayNow()} className="fixed inset-0 -z-20" />
+      <CampusBackdrop time={timeOfDayNow()} drift className="fixed inset-0 -z-20" />
       <div className="pointer-events-none fixed inset-0 -z-10 bg-[linear-gradient(180deg,rgba(5,9,7,0.35)_0%,rgba(5,9,7,0.78)_38%,rgba(5,9,7,0.9)_100%)]" />
       <header className="glass sticky top-0 z-10 border-x-0 border-t-0">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">

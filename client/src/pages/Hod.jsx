@@ -2,6 +2,9 @@ import { useCallback, useEffect, useState } from 'react';
 import api, { errorText } from '../api';
 import { Button, Card, Empty, ErrorBox, StatusBadge } from '../components/ui.jsx';
 import { leaveTypeLabel } from '../leaveType.js';
+import { useLive, useNow, countdown } from '../live.js';
+import Insights from '../components/Insights.jsx';
+import CampusLive from '../components/campus/CampusLive.jsx';
 
 function Stat({ label, value, tone }) {
   const tones = {
@@ -124,20 +127,30 @@ export default function Hod() {
   const [notice, setNotice] = useState('');
   const [summaryBusy, setSummaryBusy] = useState(false);
 
+  const [insights, setInsights] = useState(null);
+  const [today, setToday] = useState(null);
   const load = useCallback(async () => {
     try {
-      const { data } = await api.get('/hod/overview');
-      setData(data);
+      const [o, t] = await Promise.all([api.get('/hod/overview'), api.get('/hod/today')]);
+      setData(o.data);
+      setToday(t.data);
     } catch (err) {
       setError(errorText(err));
     }
   }, []);
+  const loadInsights = useCallback(() => api.get('/hod/insights').then((r) => setInsights(r.data)).catch(() => {}), []);
 
   useEffect(() => {
     load();
-    const t = setInterval(load, 5000);
+    loadInsights();
+    const t = setInterval(load, 20000); // backup; live events refresh at once
     return () => clearInterval(t);
-  }, [load]);
+  }, [load, loadInsights]);
+  useLive((ev) => {
+    load();
+    if (ev.action === 'accepted' || ev.action === 'declined' || ev.action === 'passed') loadInsights();
+  });
+  const now = useNow(1000);
 
   const getSummary = async () => {
     setSummaryBusy(true);
@@ -197,7 +210,7 @@ export default function Hod() {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="font-display text-3xl font-medium tracking-tight text-ink">Department overview</h1>
-          <p className="text-sm text-muted">CSE · today and upcoming · updates every few seconds</p>
+          <p className="text-sm text-muted">CSE · today and upcoming · updates the moment anything changes</p>
         </div>
         <Button variant="ghost" onClick={reset}>Reset demo data</Button>
       </div>
@@ -234,6 +247,8 @@ export default function Hod() {
         <Stat label="Not covered" value={stats.uncovered} tone="red" />
       </div>
 
+      <CampusLive data={today} />
+
       <div className="grid gap-6 lg:grid-cols-5">
         <Card className="lg:col-span-3" title="Proxy lectures" subtitle="Every class that needs a substitute">
           {data.proxies.length === 0 ? (
@@ -262,11 +277,17 @@ export default function Hod() {
                       <td className="py-2 pr-2">{p.absentFaculty?.name}</td>
                       <td className="py-2 pr-2">
                         {p.assignedTo?.name || p.offeredTo?.name || '—'}
-                        {p.history.length > 1 && (
-                          <div className="text-xs text-muted">{p.history.filter((h) => h.action === 'declined' || h.action === 'no-reply').length} passed on</div>
+                        {p.history.some((h) => h.action === 'declined' || h.action === 'no-reply') && (
+                          <div className="text-xs text-muted">
+                            {p.history.filter((h) => h.action === 'declined' || h.action === 'no-reply').length} passed on
+                            {p.history.some((h) => h.auto) ? ' · no reply' : ''}
+                          </div>
                         )}
                       </td>
-                      <td className="py-2 pr-2"><StatusBadge status={p.status} /></td>
+                      <td className="py-2 pr-2">
+                        <StatusBadge status={p.status} />
+                        {p.status === 'pending' && p.replyBy && <div className="mt-1 whitespace-nowrap font-mono text-[10px] text-muted">passes on {countdown(p.replyBy, now)}</div>}
+                      </td>
                       <td className="py-2 text-right">
                         {p.status === 'pending' && (
                           <button onClick={() => skip(p._id)} className="whitespace-nowrap text-xs font-semibold text-brass-2 hover:underline">
@@ -307,6 +328,8 @@ export default function Hod() {
           </Card>
         </div>
       </div>
+
+      <Insights data={insights} />
     </div>
   );
 }

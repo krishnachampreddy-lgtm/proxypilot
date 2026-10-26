@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useLive } from '../live.js';
 import api from '../api';
 import { useAuth } from '../auth.jsx';
 
@@ -40,9 +41,10 @@ export default function NotificationBell() {
 
   useEffect(() => {
     load();
-    const t = setInterval(load, 10000);
+    const t = setInterval(load, 30000);
     return () => clearInterval(t);
   }, [load]);
+  useLive(() => load());
 
   // close when tapping outside
   useEffect(() => {

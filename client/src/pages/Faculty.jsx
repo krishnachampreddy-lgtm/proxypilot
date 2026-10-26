@@ -3,6 +3,7 @@ import api, { errorText } from '../api';
 import { Button, Card, Empty, ErrorBox, StatusBadge } from '../components/ui.jsx';
 import LeaveCalendar, { dayKey } from '../components/LeaveCalendar.jsx';
 import { leaveTypeLabel } from '../leaveType.js';
+import { useLive, useNow, countdown } from '../live.js';
 
 const EXAMPLES = [
   'Down with fever, cannot come tomorrow. Please arrange proxies for my classes.',
@@ -52,9 +53,31 @@ export default function Faculty() {
 
   useEffect(() => {
     load();
-    const t = setInterval(load, 5000); // live updates during the demo
+    const t = setInterval(load, 20000); // backup; live events refresh at once
     return () => clearInterval(t);
   }, [load]);
+  useLive(() => load());
+  const now = useNow(1000);
+
+  const [calBusy, setCalBusy] = useState(false);
+  const addToCalendar = async () => {
+    setCalBusy(true);
+    try {
+      const res = await api.get('/proxies/calendar.ics', { responseType: 'blob' });
+      const url = URL.createObjectURL(res.data);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'proxypilot-cover.ics';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setCalBusy(false);
+    }
+  };
 
   const submitLeave = async (e) => {
     e.preventDefault();
@@ -186,7 +209,7 @@ export default function Faculty() {
               <h2 className="font-display text-xl font-medium text-ink">
                 {requests.waiting.length === 1 ? 'A colleague needs your help' : 'Colleagues need your help'}
               </h2>
-              <p className="text-sm text-muted">Accept to take the class, or decline and it passes to the next teacher.</p>
+              <p className="text-sm text-muted">Accept to take the class, or decline and it passes to the next teacher. No reply in {requests.replyMinutes || 15} minutes passes it on automatically.</p>
             </div>
           </div>
           <div className="grid gap-3 md:grid-cols-2">
@@ -197,7 +220,9 @@ export default function Faculty() {
                     <div className="font-display text-lg font-medium text-ink">{p.className} · {p.subject}</div>
                     <div className="font-mono text-xs text-muted">{p.prettyDate} · P{p.period} · {p.time}</div>
                   </div>
-                  <span className="rounded bg-brass-soft px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide text-brass-2">Waiting</span>
+                  <span className="rounded bg-brass-soft px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide text-brass-2">
+                    {p.replyBy ? `Passes on ${countdown(p.replyBy, now)}` : 'Waiting'}
+                  </span>
                 </div>
                 <p className="mt-2 text-sm text-ink/80">Covering for <b>{p.absentFaculty?.name}</b></p>
                 {p.aiReason && <p className="mt-1 text-xs text-brass-2">Why you: {p.aiReason}</p>}
@@ -448,17 +473,22 @@ export default function Faculty() {
           </Card>
         )}
 
-        <Card title="My upcoming proxies">
+        <Card title="My upcoming proxies" subtitle={requests.accepted.length ? 'Add them to your phone calendar with a 10-minute reminder.' : undefined}>
           {requests.accepted.length === 0 ? (
             <Empty>None.</Empty>
           ) : (
-            <ul className="space-y-2">
-              {requests.accepted.map((p) => (
-                <li key={p._id} className="rounded-lg bg-sage-soft px-3 py-2 text-sm text-sage">
-                  <b>{p.prettyDate}</b> · P{p.period} ({p.time}) · {p.className} {p.subject}
-                </li>
-              ))}
-            </ul>
+            <>
+              <ul className="space-y-2">
+                {requests.accepted.map((p) => (
+                  <li key={p._id} className="rounded-lg bg-sage-soft px-3 py-2 text-sm text-sage">
+                    <b>{p.prettyDate}</b> · P{p.period} ({p.time}) · {p.className} {p.subject}
+                  </li>
+                ))}
+              </ul>
+              <Button className="mt-3" variant="ghost" disabled={calBusy} onClick={addToCalendar}>
+                {calBusy ? 'Preparing…' : 'Add to calendar (.ics)'}
+              </Button>
+            </>
           )}
         </Card>
       </div>

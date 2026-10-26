@@ -1,17 +1,20 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { Proxies, Leaves, Users, Timetable, hydrateProxies } from '../db.js';
+import { Proxies, Leaves, Users, Timetable, hydrateProxies, q } from '../db.js';
 import { requireAuth, requireRole, validate } from '../middleware/auth.js';
 import { arrangeCover } from '../services/cover.js';
 import { advance } from '../services/matching.js';
 import { declineForNoCover } from '../services/cover.js';
 import { hodSummary } from '../services/ai.js';
-import { todayIST, monthStart, prettyDate, weekday, PERIOD_TIMES } from '../services/dates.js';
+import { todayIST, monthStart, prettyDate, weekday, addDays, PERIOD_TIMES } from '../services/dates.js';
 import { seedDatabase } from '../seedData.js';
 import { leaveBalance } from '../services/leaveBalance.js';
+import { publish } from '../services/live.js';
+import { withSweep, replyBy } from '../services/escalate.js';
 
 const router = Router();
 router.use(requireAuth, requireRole('hod'));
+router.use(withSweep);
 
 async function buildOverview() {
   const today = todayIST();
@@ -80,7 +83,7 @@ async function buildOverview() {
     leaveRequests,
     loadThisMonth,
     leaves: leaves.map((l) => ({ _id: l.id, date: l.date, prettyDate: prettyDate(l.date), reason: l.reason, faculty: { name: l.faculty_name } })),
-    proxies: upcoming.map((p) => ({ ...p, prettyDate: prettyDate(p.date), time: PERIOD_TIMES[p.period] })),
+    proxies: upcoming.map((p, i) => ({ ...p, prettyDate: prettyDate(p.date), time: PERIOD_TIMES[p.period], replyBy: replyBy(upcomingRows[i]) })),
   };
 }
 
@@ -111,18 +114,25 @@ router.post('/leaves/:id/decide', validate(DecideBody), async (req, res) => {
 
   if (req.body.action === 'decline') {
     for (const d of days) await Leaves.decide(d.id, 'declined', req.body.note);
+    publish([leave.faculty_id], { type: 'leave', action: 'declined' });
     return res.json({ ok: true, status: 'declined' });
   }
 
   // approve every day, then arrange cover day by day
   let proxies = 0;
   const notes = [];
+  const offered = new Set();
   for (const d of days) {
     const approved = await Leaves.decide(d.id, 'approved', req.body.note || null);
-    proxies += (await arrangeCover(approved)).length;
+    const made = await arrangeCover(approved);
+    proxies += made.length;
+    for (const p of made) if (p.offered_to) offered.add(p.offered_to);
     const after = await Leaves.byId(d.id);
     if (after.status === 'declined') notes.push(days.length > 1 ? `${prettyDate(d.date)}: ${after.hod_note}` : after.hod_note);
   }
+  publish([leave.faculty_id], { type: 'leave', action: notes.length === days.length ? 'declined' : 'approved' });
+  publish([...offered], { type: 'proxy', action: 'offered' });
+  publish(['student'], { type: 'timetable' });
   if (notes.length === days.length) return res.json({ ok: true, status: 'declined', note: notes.join(' ') });
   if (notes.length) return res.json({ ok: true, status: 'approved', proxies, note: `Approved, except — ${notes.join(' ')}` });
   res.json({ ok: true, status: 'approved', proxies });
@@ -132,13 +142,140 @@ router.post('/leaves/:id/decide', validate(DecideBody), async (req, res) => {
 router.post('/proxies/:id/skip', async (req, res) => {
   const proxy = await Proxies.byId(Number(req.params.id) || 0);
   if (!proxy || proxy.status !== 'pending') return res.status(409).json({ error: 'Request is not pending' });
+  const from = proxy.offered_to;
   advance(proxy, 'no-reply');
   await Proxies.save(proxy);
+  publish([from], { type: 'proxy', action: 'expired' });
   if (proxy.status === 'uncovered') {
     const note = await declineForNoCover(proxy.leave_id, proxy, 'declined');
+    publish([proxy.absent_faculty_id], { type: 'leave', action: 'declined', why: 'no-cover' });
     return res.json({ ok: true, leaveDeclined: true, note });
   }
+  publish([proxy.offered_to], { type: 'proxy', action: 'offered' });
   res.json({ ok: true });
+});
+
+// ---------------- Insights: how the department is doing ----------------
+const minutesBetween = (a, b) => (new Date(b) - new Date(a)) / 60000;
+const median = (xs) => {
+  if (!xs.length) return null;
+  const s = [...xs].sort((a, b) => a - b);
+  const m = Math.floor(s.length / 2);
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+};
+/** 100 = every teacher took the same number of proxies, lower = the load is lopsided (1 - Gini) */
+const fairness = (counts) => {
+  const n = counts.length;
+  const sum = counts.reduce((a, b) => a + b, 0);
+  if (!n || !sum) return 100;
+  let diff = 0;
+  for (const a of counts) for (const b of counts) diff += Math.abs(a - b);
+  return Math.round((1 - diff / (2 * n * sum)) * 100);
+};
+
+router.get('/insights', async (req, res) => {
+  const today = todayIST();
+  const month = today.slice(0, 7);
+  // the last six months, oldest first
+  const months = [];
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(`${month}-01T00:00:00Z`);
+    d.setUTCMonth(d.getUTCMonth() - i);
+    months.push(d.toISOString().slice(0, 7));
+  }
+  const from = `${months[0]}-01`;
+  const [leaves, proxies, faculty] = await Promise.all([
+    q(`SELECT l.*, u.name AS faculty_name FROM leaves l JOIN users u ON u.id = l.faculty_id WHERE l.date >= $1 ORDER BY l.date`, [from]),
+    q(`SELECT * FROM proxies WHERE date >= $1 AND leave_id IS NOT NULL`, [from]),
+    Users.faculty(),
+  ]);
+
+  const perMonth = months.map((m) => {
+    const ls = leaves.filter((l) => String(l.date).startsWith(m));
+    const ps = proxies.filter((p) => String(p.date).startsWith(m));
+    return {
+      month: m,
+      label: new Date(`${m}-01T00:00:00Z`).toLocaleDateString('en-IN', { month: 'short', timeZone: 'UTC' }),
+      leaves: ls.filter((l) => l.status !== 'declined').length,
+      covered: ps.filter((p) => p.status === 'accepted').length,
+      uncovered: ps.filter((p) => p.status === 'uncovered').length,
+    };
+  });
+
+  const mine = proxies.filter((p) => String(p.date).startsWith(month));
+  const decided = mine.filter((p) => p.status !== 'pending');
+  const accepted = mine.filter((p) => p.status === 'accepted');
+  const coverMinutes = [];
+  let passedOn = 0;
+  let autoPassed = 0;
+  let sameSubject = 0;
+  for (const p of mine) {
+    const h = p.history || [];
+    passedOn += h.filter((x) => x.action === 'declined' || x.action === 'no-reply').length;
+    autoPassed += h.filter((x) => x.action === 'no-reply' && x.auto).length;
+    if (p.status === 'accepted') {
+      const first = h.find((x) => x.action === 'offered');
+      const ok = h.find((x) => x.action === 'accepted');
+      if (first && ok) coverMinutes.push(Math.max(0, minutesBetween(first.at, ok.at)));
+      const c = (p.candidates || []).find((c) => c.faculty === p.assigned_to);
+      if (c && c.sameSubject !== false) sameSubject++;
+    }
+  }
+
+  const counts = Object.fromEntries(faculty.map((f) => [f.id, 0]));
+  for (const p of accepted) if (p.assigned_to in counts) counts[p.assigned_to]++;
+  const load = faculty.map((f) => ({ name: f.name, count: counts[f.id] })).sort((a, b) => b.count - a.count);
+
+  // which weekdays teachers are away most (last 90 days)
+  const since = addDays(today, -90);
+  const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const byDay = DAYS.map((d) => ({ day: d, leaves: leaves.filter((l) => l.date >= since && l.status !== 'declined' && weekday(l.date) === d).length }));
+
+  const types = { full: 0, morning: 0, afternoon: 0, periods: 0 };
+  for (const l of leaves.filter((l) => String(l.date).startsWith(month) && l.status !== 'declined')) types[l.leave_type || 'full'] = (types[l.leave_type || 'full'] || 0) + 1;
+
+  res.json({
+    month,
+    coverage: decided.length ? Math.round((accepted.length / decided.length) * 100) : null,
+    classesCovered: accepted.length,
+    waiting: mine.filter((p) => p.status === 'pending').length,
+    medianMinutesToCover: coverMinutes.length ? Math.round(median(coverMinutes)) : null,
+    passedOn,
+    autoPassed,
+    sameSubjectRate: accepted.length ? Math.round((sameSubject / accepted.length) * 100) : null,
+    fairness: fairness(load.map((l) => l.count)),
+    load,
+    perMonth,
+    byDay,
+    types,
+  });
+});
+
+// ---------------- Today on campus: every class that needs cover today ----------------
+router.get('/today', async (req, res) => {
+  const today = todayIST();
+  const [rows, classRows] = await Promise.all([
+    Proxies.where('date = $1 AND leave_id IS NOT NULL ORDER BY period', [today]),
+    q('SELECT DISTINCT class_name FROM timetable ORDER BY class_name'),
+  ]);
+  const list = await hydrateProxies(rows);
+  res.json({
+    today,
+    prettyDate: prettyDate(today),
+    allClasses: classRows.map((r) => r.class_name),
+    classes: list.map((p, i) => ({
+      _id: p._id,
+      period: p.period,
+      time: PERIOD_TIMES[p.period],
+      className: p.className,
+      subject: p.subject,
+      status: p.status,
+      absent: p.absentFaculty?.name,
+      substitute: p.assignedTo?.name || null,
+      offeredTo: p.status === 'pending' ? p.offeredTo?.name : null,
+      replyBy: replyBy(rows[i]),
+    })),
+  });
 });
 
 // Monthly report as a CSV file that opens in Excel

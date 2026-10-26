@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import CampusScene, { timeOfDayNow } from '../components/campus/CampusScene.jsx';
+import CampusScene, { campusMinutesNow } from '../components/campus/CampusScene.jsx';
 import { STOPS } from '../campus/stops.js';
+import { PHASES, phaseAt, clockLabel, phaseLabel, dayProgress, screenSeconds } from '../campus/day.js';
 import { createSoundscape } from '../components/campus/sound.js';
 import InstallButton from '../components/InstallButton.jsx';
 import { Logo } from '../components/Layout.jsx';
@@ -28,8 +29,6 @@ const ROLES = [
   ['Students', 'See who is taking your class before the bell rings.'],
 ];
 
-const pill = 'rounded-[9px] px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.14em] transition';
-
 function Action({ to, onClick, title, sub, primary }) {
   const cls = `group flex w-full items-center justify-between gap-4 rounded-[11px] border px-4 py-3 text-left transition ${
     primary ? 'border-brass/70 bg-brass text-paper hover:brightness-110' : 'border-[rgb(200_235_220/0.16)] bg-[rgb(8_14_12/0.45)] text-ink hover:border-brass/60'
@@ -51,19 +50,91 @@ function Action({ to, onClick, title, sub, primary }) {
   );
 }
 
+/** frame the 3D action beside the hero card: to its right on wide screens, above it on phones */
+function frameFor(w) {
+  if (w >= 1024) return { x: Math.min(0.24, (Math.min(560, w - 64) + 32) / w / 2), y: 0 };
+  if (w >= 640) return { x: 0.12, y: -0.08 };
+  return { x: 0, y: -0.2 };
+}
+
+function BellIcon({ className = '' }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M6 16V11a6 6 0 1 1 12 0v5l1.5 2h-15L6 16Z" />
+      <path d="M10 20a2 2 0 0 0 4 0" />
+    </svg>
+  );
+}
+
+/** The school day as a strip: each part of the day, a moving "now" marker, tap to jump. */
+function DayStrip({ minutes, onJump, compact = false }) {
+  const at = dayProgress(minutes);
+  const current = phaseAt(minutes);
+  const total = PHASES.reduce((sum, p) => sum + screenSeconds(p), 0);
+  return (
+    <div className="relative">
+      <div className="flex h-7 overflow-hidden rounded-[8px] border border-[rgb(200_235_220/0.14)]">
+        {PHASES.map((p) => {
+          const on = p.id === current.id;
+          return (
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => onJump(p.jump)}
+              title={`${p.label} · ${clockLabel(p.from)}`}
+              style={{ flexGrow: screenSeconds(p) }}
+              className={`relative min-w-0 basis-0 border-r border-[rgb(200_235_220/0.1)] px-1 text-left font-mono text-[9px] uppercase tracking-[0.1em] transition last:border-r-0 ${
+                on ? 'bg-brass/25 text-ink' : 'text-ink/55 hover:bg-ink/10 hover:text-ink'
+              }`}
+            >
+              {!compact && screenSeconds(p) / total > 0.11 && <span className="block truncate">{p.short}</span>}
+            </button>
+          );
+        })}
+      </div>
+      <span className="pointer-events-none absolute -bottom-1 -top-1 w-[2px] rounded bg-brass shadow-[0_0_8px_rgba(244,197,66,0.9)] transition-[left] duration-300" style={{ left: `calc(${at * 100}% - 1px)` }} />
+    </div>
+  );
+}
+
 export default function Home() {
-  const [time, setTime] = useState(timeOfDayNow);
   const [stop, setStop] = useState(null); // index of the tour stop, or null
   const [soundOn, setSoundOn] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [live, setLive] = useState(false);
+  const [clock, setClock] = useState(() => ({ m: campusMinutesNow(), phase: phaseAt(campusMinutesNow()) }));
+  const [bell, setBell] = useState(null);
+  const [frame, setFrame] = useState(() => frameFor(typeof window === 'undefined' ? 1280 : window.innerWidth));
   const scene = useRef(null);
   const audio = useRef(null);
+  const startAt = useRef(campusMinutesNow());
+  const bellTimer = useRef(null);
 
-  // sound follows the time of day
   useEffect(() => {
-    audio.current?.setTime(time);
-  }, [time]);
-  useEffect(() => () => audio.current?.stop(), []);
+    const onResize = () => setFrame(frameFor(window.innerWidth));
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+  useEffect(() => () => {
+    audio.current?.stop();
+    clearTimeout(bellTimer.current);
+  }, []);
+
+  // sound follows the school day
+  const phaseId = clock.phase?.id;
+  const lateEvening = clock.m >= 17 * 60;
+  useEffect(() => {
+    audio.current?.setPhase(phaseId, clock.m);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phaseId, lateEvening, soundOn]);
+
+  const onClock = useCallback((m, phase) => setClock({ m, phase }), []);
+  const onBell = useCallback((name) => {
+    setBell(name);
+    clearTimeout(bellTimer.current);
+    bellTimer.current = setTimeout(() => setBell(null), 3800);
+    audio.current?.bell(name === 'Assembly' || name === 'Home time' ? 7 : 3);
+  }, []);
 
   const toggleSound = () => {
     if (soundOn) {
@@ -72,16 +143,23 @@ export default function Home() {
       setSoundOn(false);
     } else {
       audio.current = createSoundscape();
-      audio.current?.setTime(time);
       setSoundOn(Boolean(audio.current));
     }
   };
 
+  const jumpTo = (m) => {
+    if (stop !== null) endTour();
+    scene.current?.jumpTo(m);
+  };
+  const nextPhase = () => {
+    const i = PHASES.findIndex((p) => p.id === clock.phase?.id);
+    jumpTo(PHASES[(i + 1) % PHASES.length].jump);
+  };
+
   const goTo = (i) => {
     setStop(i);
-    setTime(i === STOPS.length - 1 ? 'evening' : 'morning');
     scene.current?.goTo(i);
-    audio.current?.bell();
+    audio.current?.bell(2);
   };
   const endTour = () => {
     setStop(null);
@@ -97,12 +175,23 @@ export default function Home() {
   }, [stop]);
 
   const s = stop !== null ? STOPS[stop] : null;
+  const backdrop = startAt.current >= 17 * 60 ? 'evening' : 'morning';
 
   return (
     <div className="min-h-screen bg-paper text-ink">
       {/* ---------- living campus ---------- */}
       <section className="relative h-[100svh] min-h-[600px] overflow-hidden">
-        <CampusScene ref={scene} time={time} className="absolute inset-0" onProgress={setProgress} />
+        <CampusScene
+          ref={scene}
+          time={backdrop}
+          startMinutes={startAt.current}
+          className="absolute inset-0"
+          onProgress={setProgress}
+          onClock={onClock}
+          onBell={onBell}
+          onReady={(ok) => setLive(ok)}
+          frameShift={frame}
+        />
         {progress > 0 && progress < 1 && (
           <div className="pointer-events-none absolute left-1/2 top-20 z-10 -translate-x-1/2 sm:top-24">
             <div className="glass flex items-center gap-3 rounded-full px-4 py-2 font-mono text-[10px] uppercase tracking-[0.16em] text-ink/80">
@@ -117,23 +206,6 @@ export default function Home() {
         <nav className="absolute inset-x-0 top-0 z-10 flex items-center justify-between gap-2 px-4 py-4 sm:px-8 sm:py-6">
           <Logo />
           <div className="flex items-center gap-2">
-            <div className="glass hidden rounded-[11px] p-1 sm:flex">
-              {[
-                ['morning', 'Morning assembly'],
-                ['evening', 'Evening'],
-              ].map(([key, label]) => (
-                <button key={key} onClick={() => setTime(key)} className={`${pill} ${time === key ? 'bg-ink text-paper' : 'text-ink/80 hover:text-ink'}`}>
-                  {label}
-                </button>
-              ))}
-            </div>
-            <button
-              onClick={() => setTime(time === 'morning' ? 'evening' : 'morning')}
-              className="glass flex h-9 w-9 items-center justify-center rounded-[11px] text-base sm:hidden"
-              aria-label={time === 'morning' ? 'Switch to evening' : 'Switch to morning'}
-            >
-              {time === 'morning' ? '☀' : '☾'}
-            </button>
             <button onClick={toggleSound} className="glass flex h-9 items-center gap-1.5 rounded-[11px] px-3 font-mono text-[11px] uppercase tracking-[0.12em] text-ink/85 hover:text-ink" aria-pressed={soundOn}>
               <span aria-hidden="true">{soundOn ? '🔊' : '🔈'}</span>
               <span className="hidden sm:inline">Sound</span>
@@ -143,6 +215,41 @@ export default function Home() {
             </Link>
           </div>
         </nav>
+
+        {/* the campus clock: what time it is at the school and what's happening */}
+        {live && (
+          <div className="absolute left-4 top-[4.4rem] z-10 sm:left-auto sm:right-8 sm:top-[5.6rem] sm:w-[380px]">
+            <div className="glass rounded-[14px] p-3 sm:p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5">
+                  <span className="relative flex h-2 w-2">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-sage opacity-60" />
+                    <span className="relative inline-flex h-2 w-2 rounded-full bg-sage" />
+                  </span>
+                  <span className="font-mono text-lg leading-none tabular-nums sm:text-xl">{clockLabel(clock.m)}</span>
+                  <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-brass">{phaseLabel(clock.m)}</span>
+                </div>
+                <button onClick={nextPhase} className="rounded-[8px] border border-line px-2 py-1 font-mono text-[10px] uppercase tracking-[0.12em] text-ink/75 hover:border-brass/60 hover:text-ink">
+                  Skip ›
+                </button>
+              </div>
+              <p className="mt-2 hidden text-[13px] leading-snug text-ink/70 sm:block">{clock.phase?.now}</p>
+              <div className="mt-3 hidden sm:block">
+                <DayStrip minutes={clock.m} onJump={jumpTo} />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* the bell */}
+        {bell && (
+          <div className="pointer-events-none absolute left-1/2 top-[8.6rem] z-20 -translate-x-1/2 sm:top-24" role="status">
+            <div className="glass flex items-center gap-2 rounded-full px-4 py-2 font-mono text-[11px] uppercase tracking-[0.16em] text-brass">
+              <BellIcon className="h-4 w-4 origin-top animate-[ring_0.5s_ease-in-out_6]" />
+              {bell} bell
+            </div>
+          </div>
+        )}
 
         {/* hero card, or the tour caption while touring */}
         <div className="absolute inset-x-3 bottom-3 z-10 sm:inset-x-auto sm:bottom-8 sm:left-8 sm:w-[min(560px,calc(100vw-4rem))]">
@@ -198,7 +305,7 @@ export default function Home() {
         </div>
 
         <p className="pointer-events-none absolute bottom-8 right-8 z-10 hidden font-mono text-[10px] uppercase tracking-[0.18em] text-ink/60 lg:block">
-          Drag to look around · scroll for more ↓
+          Drag to look around · the camera follows the day ↓
         </p>
       </section>
 

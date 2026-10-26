@@ -26,6 +26,12 @@ ProxyPilot turns that whole chain into one automated workflow inside the app:
 
 **Also included**
 
+- **No reply? It moves on by itself** — a cover request nobody answers within 15 minutes (5 if the class starts within the hour) passes to the next best teacher automatically. Teachers see a live countdown on each request. Set `REPLY_MINUTES` to change the window.
+- **Live updates** — every screen updates the moment a leave is applied, approved or a class is covered (Server-Sent Events, with a small toast for each change). No refreshing.
+- **Today on campus (HOD)** — the 3D school at the real time of day, with every classroom that needs cover today lit up on the building: green covered, yellow waiting for a reply, red not covered. Tap a class to fly to its room.
+- **Insights (HOD)** — share of classes covered, median time to find cover, same-subject cover rate, a fairness score for proxy load, requests passed on, classes covered over six months, and which weekdays teachers are away most.
+- **Add to calendar** — teachers download their cover lectures as an `.ics` file with a 10-minute reminder (Google Calendar, Outlook, phone).
+
 - **"I'm sick today"** — one tap applies a full-day leave for today, marked *urgent* and shown first to the HOD.
 - **Notification bell** — new cover requests, HOD decisions, "your class is covered" and student timetable changes, with an unread count.
 - **Teacher summary** — leaves left, leaves taken, proxies taken this year/month, and classes colleagues covered.
@@ -123,13 +129,18 @@ With `EMAIL_DEV_LOG=1`, OTP codes are printed in the terminal instead of emailed
 | GET | `/api/leaves/summary` | faculty | My year at a glance |
 | GET | `/api/notifications` | all | Items for the bell |
 | POST | `/api/leaves/:id/cancel` | faculty | Withdraw a pending leave (all its days) |
-| GET | `/api/proxies/mine` | faculty | Requests waiting for me + accepted |
+| GET | `/api/proxies/mine` | faculty | Requests waiting for me (with reply deadline) + accepted |
+| GET | `/api/proxies/calendar.ics` | faculty | My cover lectures as a calendar file |
 | POST | `/api/proxies/:id/respond` | faculty | `{ action: "accept" \| "decline" }` |
 | GET | `/api/hod/overview` | hod | Leave requests, stats, proxies, load |
 | POST | `/api/hod/leaves/:id/decide` | hod | `{ action: "approve" \| "decline", note }` |
 | POST | `/api/hod/proxies/:id/skip` | hod | No reply → next teacher |
 | GET | `/api/hod/report?month=YYYY-MM` | hod | Monthly CSV report |
 | GET | `/api/hod/summary` | hod | Weekly note |
+| GET | `/api/hod/insights` | hod | Coverage, time to cover, fairness, trends |
+| GET | `/api/hod/today` | hod | Today's classes needing cover (for the live campus) |
+| POST | `/api/live/ticket` | all | One-minute ticket for the live stream |
+| GET | `/api/live?ticket=…` | all | Server-Sent Events: live updates |
 | POST | `/api/hod/reset-demo` | hod | Reload demo data |
 | GET | `/api/student/schedule` | student | Today + tomorrow with substitutes |
 | GET | `/api/health` | public | Status check |
@@ -151,7 +162,11 @@ The home page opens on a live, realistic Indian school campus rendered in the br
 - assembly courtyard with the national flag, students in uniform lined up in the morning and walking home in the evening, teachers in the corridors
 - library with a Mangalore-tile roof, basketball court, running track and football pitch, bicycle stand, bus bay with school buses, coconut palms and shade trees moving in the wind
 - the road outside with black-and-yellow kerbs, a zebra crossing, traffic, auto-rickshaws, electric poles with sagging wires, and the town stretching to the horizon
-- physical sky and sunlight, image-based lighting, soft shadows, ambient occlusion, bloom and filmic tone mapping; morning and evening, sound, and a 7-stop guided tour
+- physical sky and sunlight, image-based lighting, soft shadows, ambient occlusion, bloom and filmic tone mapping; sound, and a 7-stop guided tour
+
+**A full school day plays out** (about five minutes, from the gate opening to the gate closing): teachers drive in, buses and autos drop students who walk in and fill the assembly lines, the bell rings, lines break up into classrooms, PE class runs laps of the track, lunch crowds spill into the yard with a basketball game, football in the afternoon, then home time — 100+ students stream out to the buses, which leave one by one, and teachers drive home as the sun sets. A director camera follows whatever is happening; a live clock shows the time and lets you jump to any part of the day. It starts at the real time of day.
+
+**Runs on ordinary laptops and phones**: the scene picks a quality level from the graphics chip, then watches its own frame rate and trades detail for speed while running (resolution, then effects). Students in the crowd are baked walk/run cycle frames drawn with instancing, and meshes are simplified with meshoptimizer, so a hundred students cost a few draw calls.
 
 The app screens use rendered photos of the same campus (`client/public/campus/stills`) so they stay light on phones. Open `/?still=morning` or `/?still=evening` to re-render them.
 

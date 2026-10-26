@@ -11,17 +11,29 @@ const stillTime = new URLSearchParams(window.location.search).get('still');
 if (stillTime) {
   const el = document.getElementById('root');
   el.style.cssText = 'position:fixed;inset:0';
-  const stop = new URLSearchParams(window.location.search).get('stop');
+  const q = new URLSearchParams(window.location.search);
+  const stop = q.get('stop');
+  // &at=7:40 sets the school clock, &adv=20 lets the day run that many seconds first
+  const at = q.get('at')?.split(':').map(Number);
   window.__campusDebug = true;
-  import('./campus/index.js').then(({ createCampus, STOPS }) => {
-    const view = stop !== null ? STOPS[+stop] : undefined;
-    const api = createCampus(el, { mode: 'still', time: stillTime, view });
+  import('./campus/index.js').then(async ({ createCampus, STOPS, SHOTS, prepared }) => {
+    await prepared.catch(() => {});
+    // &shot=arrival.1 frames one of the director's shots
+    const shot = q.get('shot')?.split('.');
+    const view = stop !== null ? STOPS[+stop] : shot ? { cam: SHOTS[shot[0]][+shot[1] || 0][0], target: SHOTS[shot[0]][+shot[1] || 0][1] } : undefined;
+    const startMinutes = at ? at[0] * 60 + (at[1] || 0) : view?.clock;
+    const api = createCampus(el, { mode: 'still', time: stillTime, view, startMinutes });
     api.ready.then(() => {
+      if (q.get('adv')) api.advance(+q.get('adv'));
       api.renderStill();
+      window.__campusApi = api;
+      window.__campusShots = SHOTS;
       window.__stillReady = true;
     });
   });
-} else createRoot(document.getElementById('root')).render(
+} else {
+  if (new URLSearchParams(window.location.search).has('debug')) window.__campusDebug = true;
+  createRoot(document.getElementById('root')).render(
   <StrictMode>
     <BrowserRouter>
       <AuthProvider>
@@ -30,3 +42,4 @@ if (stillTime) {
     </BrowserRouter>
   </StrictMode>
 );
+}

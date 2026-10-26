@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Tree, TreePreset } from './vendor/ez-tree/index.js';
 import { CAMPUS } from './grounds.js';
+import { simplifyGeometry } from './lod.js';
 
 /*
   Trees: real branching trees with bark and leaf textures (EZ-Tree, MIT licence),
@@ -18,14 +19,14 @@ const SPECIES = [
   { key: 'bush2', preset: 'Bush 2', height: [1.1, 1.8], seed: 9, leafTint: '#c7dc9c' },
 ];
 
-function makeVariant(spec, far = false) {
+function makeVariant(spec, far = false, leafScale = 1.25) {
   const t = new Tree();
   const json = JSON.parse(JSON.stringify(TreePreset[spec.preset]));
   json.seed = spec.seed;
   if (spec.leafTint) json.leaves.tint = new THREE.Color(spec.leafTint).getHex();
   const bush = spec.key.startsWith('bush');
   // far trees: fewer, bigger leaves and simpler branches (they are only a few pixels tall)
-  json.leaves.count = Math.max(2, Math.round(json.leaves.count * (bush ? 0.8 : far ? 0.36 : 1.25)));
+  json.leaves.count = Math.max(2, Math.round(json.leaves.count * (bush ? 0.8 * Math.min(1, leafScale) : far ? 0.36 : leafScale)));
   if (far) {
     json.leaves.size *= 1.7;
     for (const lvl of Object.keys(json.branch.sections)) json.branch.sections[lvl] = Math.max(3, Math.round(json.branch.sections[lvl] * 0.4));
@@ -99,7 +100,7 @@ function palmGeometries(L, rng, spots) {
   return { trunks, fronds, nuts, trunkMat, frondMat, nutMat };
 }
 
-export function buildTrees(scene, L, rng, { quality = 'high', merge }) {
+export function buildTrees(scene, L, rng, { P, merge }) {
   const group = new THREE.Group();
   scene.add(group);
 
@@ -116,10 +117,10 @@ export function buildTrees(scene, L, rng, { quality = 'high', merge }) {
     spots.neem.push([x1 - 4 - rng() * 2, z]);
   }
   // big shade trees
-  [[-46, 34], [-70, -20], [-82, 30], [-20, -50], [10, -55], [40, -50], [-56, -66], [52, 36], [116, 34], [114, -70], [60, -74], [-86, -62]].forEach((p) => spots.banyan.push(p));
+  [[-46, 34], [-70, -20], [-82, 30], [-20, -50], [10, -55], [40, -50], [-56, -66], [60, 34], [116, 34], [114, -70], [60, -74], [-86, -62]].forEach((p) => spots.banyan.push(p));
   [[-34, -48], [-6, -62], [26, -64], [-76, 14], [-44, -6], [50, -60], [120, 0], [32, 6]].forEach((p) => spots.peepal.push(p));
   // bushes along the buildings and the drive
-  for (let z = 10; z <= 40; z += 3.2) {
+  for (let z = 10; z <= 27; z += 3.2) {
     spots.bush.push([-9.6 + rng() * 0.3, z]);
     spots.bush2.push([9.6 + rng() * 0.3, z]);
   }
@@ -129,7 +130,7 @@ export function buildTrees(scene, L, rng, { quality = 'high', merge }) {
     spots.bush2.push([38.2, z]);
   }
   // trees in the town beyond the road and around the campus
-  const farCount = quality === 'low' ? 80 : quality === 'medium' ? 160 : 260;
+  const farCount = P.farTrees;
   for (let i = 0; i < farCount; i++) {
     const a = rng() * Math.PI * 2;
     const r = 120 + Math.pow(rng(), 0.8) * 640;
@@ -147,6 +148,7 @@ export function buildTrees(scene, L, rng, { quality = 'high', merge }) {
   const windMats = [];
   const inCampus = ([x, z]) => x > x0 - 6 && x < x1 + 6 && z > z0 - 6 && z < z1 + 6;
   const lists = [];
+  const farMeshes = [];
   for (const spec of SPECIES) {
     const all = spots[spec.key];
     lists.push([spec, all.filter(inCampus), false]);
@@ -155,7 +157,8 @@ export function buildTrees(scene, L, rng, { quality = 'high', merge }) {
   }
   for (const [spec, list, far] of lists) {
     if (!list.length) continue;
-    const { tree, height } = makeVariant(spec, far);
+    const { tree, height } = makeVariant(spec, far, P.nearLeaves);
+    simplifyGeometry(tree.branchesMesh.geometry, far ? P.branch * 0.6 : P.branch, 0.03);
     const parts = [tree.branchesMesh, tree.leavesMesh];
     for (const part of parts) {
       const inst = new THREE.InstancedMesh(part.geometry, part.material, list.length);
@@ -167,6 +170,7 @@ export function buildTrees(scene, L, rng, { quality = 'high', merge }) {
         m4.compose(new THREE.Vector3(x, 0, z), q, new THREE.Vector3(s, s * (0.92 + ((x + z) % 1) * 0.1), s));
         inst.setMatrixAt(i, m4);
       });
+      if (far) farMeshes.push(inst);
       inst.castShadow = !far;
       inst.receiveShadow = !far;
       group.add(inst);
@@ -177,13 +181,14 @@ export function buildTrees(scene, L, rng, { quality = 'high', merge }) {
 
   // ---- coconut palms along the drive and by the gate ----
   const palmSpots = [];
-  for (let z = 14; z <= 38; z += 6) palmSpots.push([-11.6, z], [11.6, z]);
-  palmSpots.push([-20, 30], [-30, 36], [60, 38], [-60, 38], [-88, 40], [118, 40]);
-  const P = palmGeometries(L, rng, palmSpots);
+  // palms frame the drive; the north end is kept clear for buses and cars turning in
+  for (let z = 14; z <= 26; z += 6) palmSpots.push([-11.6, z], [11.6, z]);
+  palmSpots.push([-20, 30], [-40, 30], [30, 14], [40, 15], [60, 38], [-60, 38], [-88, 40], [118, 40]);
+  const palm = palmGeometries(L, rng, palmSpots);
   const meshes = [
-    new THREE.Mesh(merge(P.trunks), P.trunkMat),
-    new THREE.Mesh(merge(P.fronds), P.frondMat),
-    new THREE.Mesh(merge(P.nuts), P.nutMat),
+    new THREE.Mesh(merge(palm.trunks), palm.trunkMat),
+    new THREE.Mesh(merge(palm.fronds), palm.frondMat),
+    new THREE.Mesh(merge(palm.nuts), palm.nutMat),
   ];
   meshes.forEach((m) => {
     m.castShadow = true;
@@ -193,6 +198,10 @@ export function buildTrees(scene, L, rng, { quality = 'high', merge }) {
 
   return {
     group,
+    /** the governor hides the distant trees on slow chips */
+    setFar(on) {
+      for (const m of farMeshes) m.visible = on;
+    },
     update(t) {
       for (const m of windMats) {
         const sh = m.userData.shader;

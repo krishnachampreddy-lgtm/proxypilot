@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { q, Users } from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
+import { withSweep } from '../services/escalate.js';
 import { todayIST, addDays, prettyDate, PERIOD_TIMES } from '../services/dates.js';
 
 /**
@@ -9,6 +10,7 @@ import { todayIST, addDays, prettyDate, PERIOD_TIMES } from '../services/dates.j
  */
 const router = Router();
 router.use(requireAuth);
+router.use(withSweep);
 
 const iso = (t) => new Date(t).toISOString();
 const lastAt = (history, action) => [...(history || [])].reverse().find((h) => h.action === action)?.at;

@@ -55,6 +55,8 @@ body {
 }
 
 /* the campus photo behind the app drifts very slowly, like a camera on a crane */
+@keyframes toast-in { from { opacity: 0; transform: translateY(-6px) scale(0.98); } to { opacity: 1; transform: none; } }
+@keyframes ring { 0%, 100% { transform: rotate(0); } 25% { transform: rotate(16deg); } 75% { transform: rotate(-16deg); } }
 @keyframes campus-drift { from { transform: scale(1.04) translate3d(0, 0, 0); } to { transform: scale(1.12) translate3d(-1.5%, -1%, 0); } }
 .campus-drift { animation: campus-drift 60s ease-in-out infinite alternate; }
 

@@ -89,8 +89,8 @@ function house(B, M, rng, x, z, facing, { detail = true, shop = false } = {}) {
 }
 
 /** Simple far-away blocks so the city carries on to the horizon. */
-function farTown(B, M, rng) {
-  for (let i = 0; i < 1400; i++) {
+function farTown(B, M, rng, count = 1400) {
+  for (let i = 0; i < count; i++) {
     const a = rng() * Math.PI * 2;
     const r = 330 + Math.pow(rng(), 0.7) * 520;
     const x = Math.cos(a) * r;
@@ -103,10 +103,10 @@ function farTown(B, M, rng) {
   }
 }
 
-export function buildTown(B, M, rng, quality) {
-  farTown(B, M, rng);
-  const many = quality === 'low' ? 0.5 : 1;
-  const { x0, x1, z0, z1 } = CAMPUS;
+export function buildTown(B, M, rng, P) {
+  farTown(B, M, rng, P.farTown);
+  const many = P.name === 'low' ? 0.5 : P.name === 'medium' ? 0.8 : 1;
+  const { x0, x1, z0 } = CAMPUS;
   // shops and houses facing the main road
   for (let x = -330; x < 330; x += 8 + rng() * 5) {
     if (rng() > many) continue;

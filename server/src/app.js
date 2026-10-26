@@ -8,6 +8,7 @@ import proxyRoutes from './routes/proxies.js';
 import hodRoutes from './routes/hod.js';
 import studentRoutes from './routes/student.js';
 import notificationRoutes from './routes/notifications.js';
+import liveRoutes from './routes/live.js';
 import { aiEnabled } from './services/ai.js';
 import { ensureSchema } from './db.js';
 import { seedIfEmpty } from './seedData.js';
@@ -46,6 +47,7 @@ export function createApp() {
   app.use('/api/hod', hodRoutes);
   app.use('/api/student', studentRoutes);
   app.use('/api/notifications', notificationRoutes);
+  app.use('/api/live', liveRoutes);
 
   app.use('/api', (req, res) => res.status(404).json({ error: 'Route not found' }));
 

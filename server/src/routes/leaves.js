@@ -7,6 +7,7 @@ import { requireAuth, requireRole, validate } from '../middleware/auth.js';
 import { parseLeave } from '../services/ai.js';
 import { leaveBalance, leaveCost } from '../services/leaveBalance.js';
 import { todayIST, weekday, prettyDate, addDays, PERIOD_TIMES } from '../services/dates.js';
+import { publish } from '../services/live.js';
 
 const router = Router();
 router.use(requireAuth, requireRole('faculty'));
@@ -83,6 +84,7 @@ router.post('/', validate(LeaveBody), async (req, res) => {
   });
 
   // 4. Goes to the HOD first; cover is arranged only after approval
+  publish(['hod'], { type: 'leave', action: 'new', name: req.user.name, urgent: Boolean(urgent) });
   res.status(201).json({
     leave: { ...leave, _id: leave.id },
     status: 'pending',
@@ -140,6 +142,7 @@ async function applyMultiDay(req, res, myClasses) {
       groupId,
     });
   }
+  publish(['hod'], { type: 'leave', action: 'new', name: req.user.name, days: days.length });
   res.status(201).json({
     status: 'pending',
     understood: { date, endDate, prettyDate: label, days: days.length, periods: [], reason, leaveType: 'full' },
@@ -213,6 +216,7 @@ router.post('/:id/cancel', async (req, res) => {
   if (!leave || leave.faculty_id !== req.user.id) return res.status(404).json({ error: 'Leave not found' });
   if (leave.status !== 'pending') return res.status(409).json({ error: `This leave was already ${leave.status} and can't be cancelled.` });
   for (const l of await Leaves.sameGroup(leave)) await Leaves.remove(l.id);
+  publish(['hod'], { type: 'leave', action: 'cancelled', name: req.user.name });
   res.json({ ok: true });
 });
 

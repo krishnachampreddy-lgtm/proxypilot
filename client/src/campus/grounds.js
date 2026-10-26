@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { canvasTexture, signTexture } from './util.js';
+import { Batch } from './batch.js';
 
 /* Ground, lawns, paths, sports areas, compound wall, gate, road, poles and the library. */
 
@@ -199,7 +200,7 @@ function wire(B, a, b, sag = 0.9) {
   B.add(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 12, 0.014, 4), 'darkMetal');
 }
 
-export function buildGrounds(scene, B, M, L, rng, quality) {
+export function buildGrounds(scene, B, M, L, rng, P) {
   const noise = L.tex('grime.jpg', { srgb: false });
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(3000, 3000).rotateX(-Math.PI / 2), groundMaterial(L, noise));
   ground.receiveShadow = true;
@@ -209,18 +210,22 @@ export function buildGrounds(scene, B, M, L, rng, quality) {
   B.box(54, 0.08, 33, 'pavers', 0, 0, -8.5); // assembly courtyard
   B.box(9, 0.08, 23, 'pavers', 0, 0, 20.5); // main drive to the porch
   B.box(5, 0.08, 4, 'pavers', 0, 0, 7); // porch apron
-  B.box(30, 0.06, 18, 'asphalt', 30, 0, 30); // bus bay
+  B.box(44, 0.06, 18.6, 'asphalt', 28, 0, 30.6); // bus bay (two rows of buses, nose toward the gate)
+  B.box(10.5, 0.065, 15, 'asphalt', 9.75, 0, 34.5); // driveway from the gate into the bus bay
+  B.box(31, 0.06, 7.4, 'asphalt', -21, 0, 36.3); // staff car park
+  B.box(4, 0.065, 6, 'asphalt', -5.5, 0, 38.5);
   B.box(14, 0.08, 3, 'pavers', 15, 0, 12); // path to bus bay
   B.box(3, 0.08, 52, 'pavers', -46, 0, -10); // path to library
   B.box(12, 0.08, 3, 'pavers', -40, 0, 14);
   B.box(3, 0.08, 40, 'pavers', 46, 0, -14); // path to playground
-  // painted parking lines in the bus bay
-  for (const x of [16, 25, 34, 43]) B.box(0.12, 0.01, 12, 'line', x, 0.06, 30);
+  // painted bays for buses and cars
+  for (const z of [29.5, 22.2, 36.9]) B.box(30, 0.01, 0.12, 'line', 30, 0.065, z);
+  for (const x of [-30, -26, -22, -18]) B.box(0.1, 0.01, 4.4, 'line', x, 0.065, 34.8);
 
   // flower beds edged with painted bricks along the drive
   for (const side of [-1, 1]) {
-    B.box(1.2, 0.18, 18, 'dirt', side * 6.2, 0, 22);
-    for (let z = 13.2; z <= 31; z += 0.6) B.box(0.22, 0.24, 0.5, (Math.round(z / 0.6) % 2 ? 'white' : 'maroon'), side * 5.5, 0, z);
+    B.box(1.2, 0.18, 13, 'dirt', side * 6.2, 0, 19.5);
+    for (let z = 13.2; z <= 26; z += 0.6) B.box(0.22, 0.24, 0.5, (Math.round(z / 0.6) % 2 ? 'white' : 'maroon'), side * 5.5, 0, z);
   }
 
   // ---- running track and football field ----
@@ -313,14 +318,26 @@ export function buildGrounds(scene, B, M, L, rng, quality) {
     B.box(1.4, 4.6, 1.4, 'brick', s * 8, 0, z1);
     B.box(1.7, 0.25, 1.7, 'white', s * 8, 4.6, z1);
     B.add(new THREE.SphereGeometry(0.32, 16, 12), 'lampOff', s * 8, 5.2, z1);
-    // sliding gate panels, pushed open along the wall
-    for (let b = 0; b < 24; b++) B.box(0.035, 2.2, 0.035, 'green', s * (9.2 + b * 0.25), 0.1, z1 - 0.7);
-    B.box(6, 0.06, 0.06, 'green', s * 12, 2.3, z1 - 0.7);
-    B.box(6, 0.06, 0.06, 'green', s * 12, 0.15, z1 - 0.7);
   }
   B.box(17.4, 0.14, 0.14, 'green', 0, 6.4, z1);
   B.box(17.4, 0.14, 0.14, 'green', 0, 7.7, z1);
   for (let x = -8; x <= 8.01; x += 1) B.add(new THREE.BoxGeometry(0.05, 1.3, 0.05), 'green', x, 7.05, z1, { rz: x % 2 ? 0.6 : -0.6 });
+  // sliding gate: two steel panels that open in the morning and close at night
+  const gate = [];
+  for (const side of [-1, 1]) {
+    const GB = new Batch(M);
+    for (let b = 0; b <= 28; b++) GB.box(0.035, 2.0, 0.035, 'green', side * b * 0.26, 0.15, 0);
+    GB.box(7.4, 0.07, 0.07, 'green', side * 3.65, 2.15, 0);
+    GB.box(7.4, 0.07, 0.07, 'green', side * 3.65, 0.12, 0);
+    GB.box(7.4, 0.05, 0.05, 'green', side * 3.65, 1.1, 0);
+    GB.add(new THREE.CylinderGeometry(0.09, 0.09, 0.06, 10), 'darkMetal', side * 0.3, 0.09, 0, { rx: Math.PI / 2 });
+    GB.add(new THREE.CylinderGeometry(0.09, 0.09, 0.06, 10), 'darkMetal', side * 7, 0.09, 0, { rx: Math.PI / 2 });
+    const g = new THREE.Group();
+    GB.build(g);
+    g.position.set(side * 0.02, 0, z1 - 0.55);
+    scene.add(g);
+    gate.push({ g, side });
+  }
   const gateSign = new THREE.Mesh(new THREE.PlaneGeometry(11, 1.0), new THREE.MeshStandardMaterial({ map: signTexture('PROXYPILOT SCHOOL', { w: 2048, h: 186, bg: '#1f3d30', fg: '#f3d888' }), roughness: 0.5 }));
   gateSign.position.set(0, 7.05, z1 + 0.09);
   const gateSignBack = gateSign.clone();
@@ -355,7 +372,7 @@ export function buildGrounds(scene, B, M, L, rng, quality) {
 
   // ---- campus lamps ----
   const lamps = [];
-  for (let z = 12; z <= 38; z += 6.5) lamps.push([-5.2, z], [5.2, z]);
+  for (let z = 12; z <= 25; z += 6.5) lamps.push([-5.2, z], [5.2, z]);
   lamps.push([-24, 4], [24, 4], [-24, -20], [24, -20], [16, 22], [44, 22], [-46, 16], [-46, -26], [46, 0], [46, -28]);
   for (const [x, z] of lamps) {
     B.cyl(0.08, 4.4, 'darkMetal', x, 0, z, 8, { r2: 0.05 });
@@ -418,12 +435,21 @@ export function buildGrounds(scene, B, M, L, rng, quality) {
 
   // ---- grass blades on the lawns ----
   const lawns = [
-    [-24, 10, -7, 42], [-46, 26, -24, 42], [7, 14, 14, 42], [24, 10, 46, 20], // front lawns
+    [-24, 10, -7, 32], [-46, 26, -37, 42], [-36, 26, -24, 32], [7, 14, 14, 27], [24, 10, 46, 20], // front lawns
     [70, -60, 100, 0], // football pitch
   ];
-  const tufts = quality === 'high' || quality === 'still' ? 42000 : quality === 'medium' ? 18000 : 6000;
-  const grass = grassBlades(lawns, tufts, rng);
+  // weaker graphics chips skip the blades; the lawn texture alone still reads as grass from the tour cameras
+  const grass = grassBlades(lawns, Math.max(1, P.grass || 0), rng);
+  grass.visible = (P.grass || 0) > 0;
   scene.add(grass);
 
-  return { ground, grass, lamps };
+  return {
+    ground,
+    grass,
+    lamps,
+    /** 0 = closed, 1 = open */
+    setGate(open) {
+      for (const { g, side } of gate) g.position.x = side * (0.02 + open * 7.6);
+    },
+  };
 }

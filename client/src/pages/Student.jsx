@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { useLive } from '../live.js';
 import api, { errorText } from '../api';
 import { Card, ErrorBox } from '../components/ui.jsx';
 
@@ -12,12 +13,13 @@ export default function Student() {
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
 
+  const load = useCallback(() => api.get('/student/schedule').then((r) => setData(r.data)).catch((e) => setError(errorText(e))), []);
   useEffect(() => {
-    const load = () => api.get('/student/schedule').then((r) => setData(r.data)).catch((e) => setError(errorText(e)));
     load();
-    const t = setInterval(load, 5000);
+    const t = setInterval(load, 20000); // backup; live events refresh at once
     return () => clearInterval(t);
-  }, []);
+  }, [load]);
+  useLive(() => load());
 
   if (!data) return <p className="text-muted">{error || 'Loading…'}</p>;
 

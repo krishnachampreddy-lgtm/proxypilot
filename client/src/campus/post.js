@@ -5,6 +5,7 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { SMAAPass } from 'three/examples/jsm/postprocessing/SMAAPass.js';
+import { FXAAShader } from 'three/examples/jsm/shaders/FXAAShader.js';
 import { N8AOPass } from 'n8ao';
 
 /*
@@ -39,42 +40,70 @@ const FilmShader = {
     }`,
 };
 
-export function createPost(renderer, scene, camera, { quality = 'high' } = {}) {
+export function createPost(renderer, scene, camera, P) {
   const size = renderer.getDrawingBufferSize(new THREE.Vector2());
   const target = new THREE.WebGLRenderTarget(size.x, size.y, { type: THREE.HalfFloatType });
   const composer = new EffectComposer(renderer, target);
 
+  // the scene is drawn either by the ambient-occlusion pass or by a plain render pass
+  const plain = new RenderPass(scene, camera);
   let ao = null;
-  if (quality !== 'low') {
+  if (P.ao) {
     ao = new N8AOPass(scene, camera, size.x, size.y);
     ao.configuration.aoRadius = 2.2;
     ao.configuration.distanceFalloff = 1.0;
     ao.configuration.intensity = 2.6;
     ao.configuration.color = new THREE.Color(0, 0, 0);
     ao.configuration.gammaCorrection = false;
-    ao.configuration.halfRes = quality !== 'high' && quality !== 'still';
-    ao.setQualityMode(quality === 'still' ? 'Ultra' : quality === 'high' ? 'Medium' : 'Low');
+    ao.configuration.halfRes = Boolean(P.aoHalf);
+    ao.setQualityMode(P.ao);
     composer.addPass(ao);
-  } else {
-    composer.addPass(new RenderPass(scene, camera));
+    plain.enabled = false;
   }
+  composer.addPass(plain);
 
-  const bloom = new UnrealBloomPass(new THREE.Vector2(size.x, size.y), 0.22, 0.55, 0.93);
+  const bloom = new UnrealBloomPass(new THREE.Vector2(size.x / 2, size.y / 2), 0.22, 0.55, 0.93);
+  bloom.enabled = P.bloom;
   composer.addPass(bloom);
   composer.addPass(new OutputPass());
   const film = new ShaderPass(FilmShader);
   composer.addPass(film);
-  const smaa = new SMAAPass(size.x, size.y);
-  composer.addPass(smaa);
+  let fxaa = null;
+  if (P.aa === 'smaa') composer.addPass(new SMAAPass(size.x, size.y));
+  else {
+    fxaa = new ShaderPass(FXAAShader);
+    composer.addPass(fxaa);
+  }
+  const setFxaa = () => {
+    const s = renderer.getDrawingBufferSize(new THREE.Vector2());
+    fxaa?.material.uniforms.resolution.value.set(1 / s.x, 1 / s.y);
+  };
+  setFxaa();
 
   return {
     composer,
     film,
     bloom,
+    get hasAO() {
+      return Boolean(ao && ao.enabled);
+    },
+    /** governor: switch the ambient occlusion off to save time */
+    dropAO() {
+      if (!ao || !ao.enabled) return false;
+      ao.enabled = false;
+      plain.enabled = true;
+      return true;
+    },
+    dropBloom() {
+      if (!bloom.enabled) return false;
+      bloom.enabled = false;
+      return true;
+    },
     setSize(w, h) {
       composer.setSize(w, h);
       const s = renderer.getDrawingBufferSize(new THREE.Vector2());
       ao?.setSize(s.x, s.y);
+      setFxaa();
     },
     render(t, warm) {
       film.uniforms.uTime.value = t % 100;

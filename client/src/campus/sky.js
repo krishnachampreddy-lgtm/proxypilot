@@ -24,7 +24,7 @@ export const TIMES = {
   },
 };
 
-export function createSky(renderer, scene, { quality = 'high', flare = true } = {}) {
+export function createSky(renderer, scene, { shadowSize = 2048, flare = true } = {}) {
   // the sky model is very bright; scale it so it sits naturally next to the lit scene
   // and melt the bottom of the sky into the haze so the horizon has no hard edge
   const gain = (skyObj, value) => {
@@ -59,7 +59,7 @@ export function createSky(renderer, scene, { quality = 'high', flare = true } = 
 
   // sunlight
   const sun = new THREE.DirectionalLight('#ffffff', 3);
-  const size = quality === 'high' ? 4096 : quality === 'medium' ? 2048 : 1024;
+  const size = shadowSize;
   sun.castShadow = true;
   sun.shadow.mapSize.set(size, size);
   const sc = sun.shadow.camera;
@@ -129,17 +129,29 @@ export function createSky(renderer, scene, { quality = 'high', flare = true } = 
 
   const sunDir = new THREE.Vector3();
   const tmp = new THREE.Color();
-  let lastEnvK = -1;
+  let lastEl = -99;
+  let lastW = -1;
+  const sstep = (a, b, x) => {
+    const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+    return t * t * (3 - 2 * t);
+  };
 
-  /** k = 0 morning … 1 evening */
-  const apply = (k, { rebuildEnv = true } = {}) => {
+  /**
+   * Lights the scene for a time of day (minutes since midnight).
+   * The sun rises in the east, stands high at noon and sets golden in the west.
+   * Returns { warm, lights } — how evening-coloured the light is and how much the lamps are on.
+   */
+  const apply = (minutes, { rebuildEnv = true } = {}) => {
     const A = TIMES.morning;
     const B = TIMES.evening;
-    const el = lerp(A.elevation, B.elevation, k);
-    const az = lerp(A.azimuth, B.azimuth, k);
-    const phi = deg(90 - el);
-    const theta = deg(az);
-    sunDir.setFromSphericalCoords(1, phi, theta);
+    const h = minutes / 60;
+    const day = Math.min(1, Math.max(0, (h - 6.2) / (18.1 - 6.2)));
+    const el = Math.max(2.6, Math.sin(Math.PI * day) * 70);
+    const az = lerp(108, 256, day);
+    const warm = h > 12 ? 1 - sstep(4, 24, el) : (1 - sstep(8, 30, el)) * 0.4;
+    const lights = h > 12 ? 1 - sstep(3.5, 12, el) : 0;
+    const k = warm;
+    sunDir.setFromSphericalCoords(1, deg(90 - el), deg(az));
     for (const u of [U, envSky.material.uniforms]) {
       u.sunPosition.value.copy(sunDir);
       u.turbidity.value = lerp(A.turbidity, B.turbidity, k);
@@ -149,7 +161,7 @@ export function createSky(renderer, scene, { quality = 'high', flare = true } = 
     }
     sun.position.copy(sun.target.position).addScaledVector(sunDir, 500);
     sun.color.copy(tmp.set(A.sun).lerp(C(B.sun), k));
-    sun.intensity = lerp(A.sunI, B.sunI, k);
+    sun.intensity = lerp(B.sunI, A.sunI, sstep(3, 30, el));
     hemi.color.set(A.hemiSky).lerp(C(B.hemiSky), k);
     hemi.groundColor.set(A.hemiGround).lerp(C(B.hemiGround), k);
     hemi.intensity = lerp(A.hemiI, B.hemiI, k);
@@ -164,13 +176,15 @@ export function createSky(renderer, scene, { quality = 'high', flare = true } = 
     cloudMat.uniforms.uLit.value.set(A.cloud).lerp(C(B.cloud), k);
     cloudMat.uniforms.uShade.value.set(A.cloudShade).lerp(C(B.cloudShade), k);
 
-    if (rebuildEnv && Math.abs(k - lastEnvK) > 0.02) {
-      lastEnvK = k;
+    if (rebuildEnv && (Math.abs(el - lastEl) > 1.5 || Math.abs(warm - lastW) > 0.03)) {
+      lastEl = el;
+      lastW = warm;
       const rt = pmrem.fromScene(envScene, 0.02, 1, 2000);
       scene.environment = rt.texture;
       envRT?.dispose();
       envRT = rt;
     }
+    return { warm, lights };
   };
 
   return {

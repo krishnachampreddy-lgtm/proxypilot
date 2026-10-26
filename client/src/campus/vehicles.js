@@ -126,53 +126,125 @@ function autoTemplate() {
   return template(parts);
 }
 
-export function buildVehicles(scene, rng) {
+/** A vehicle that drives along a smooth route, slowing for curves and stopping at the end. */
+export class Driver {
+  constructor(obj) {
+    this.obj = obj;
+    this.curve = null;
+    this.s = 0;
+    this.len = 0;
+    this.speed = 0;
+    this.max = 8;
+    this.active = false;
+    this.onEnd = null;
+    this.hold = false;
+  }
+  drive(points, { max = 8, onEnd = null, start = 0 } = {}) {
+    this.curve = new THREE.CatmullRomCurve3(points.map((p) => new THREE.Vector3(p[0], 0.06, p[1])), false, 'centripetal', 0.3);
+    this.len = this.curve.getLength();
+    this.s = 0;
+    this.max = max;
+    this.speed = start;
+    this.onEnd = onEnd;
+    this.active = true;
+    this.obj.visible = true;
+    this.place();
+  }
+  place() {
+    const t = Math.min(1, this.s / this.len);
+    const p = this.curve.getPointAt(t);
+    const d = this.curve.getTangentAt(Math.min(0.999, t));
+    this.obj.position.copy(p);
+    this.obj.rotation.y = Math.atan2(d.x, d.z);
+  }
+  update(dt) {
+    if (!this.active) return;
+    const left = this.len - this.s;
+    // ease off near the end and in tight bends
+    const t = Math.min(0.999, this.s / this.len);
+    const a = this.curve.getTangentAt(t);
+    const b = this.curve.getTangentAt(Math.min(0.999, t + 6 / this.len));
+    const bend = 1 - Math.max(0, a.dot(b));
+    let target = this.max * (1 - Math.min(0.7, bend * 6));
+    target = Math.min(target, Math.max(0.8, left * 0.6));
+    if (this.hold) target = 0;
+    this.speed += (target - this.speed) * Math.min(1, dt * 1.6);
+    this.s = Math.min(this.len, this.s + this.speed * dt);
+    this.place();
+    if (left < 0.05) {
+      this.active = false;
+      this.speed = 0;
+      const cb = this.onEnd;
+      this.onEnd = null;
+      cb?.(this);
+    }
+  }
+}
+
+export function buildVehicles(scene, rng, P) {
   const bus = busTemplate();
   const cars = ['#f4f4f2', '#b8bcc0', '#a3201b', '#3b4249', '#1f4f8b', '#e9e6dc'].map(carTemplate);
   const auto = autoTemplate();
   const group = new THREE.Group();
   scene.add(group);
 
-  // parked school buses in the bus bay
-  for (const [x, rot] of [[20.5, 0], [29.5, 0], [38.5, 0]]) {
-    const b = bus.clone();
-    b.position.set(x, 0.06, 30);
-    b.rotation.y = rot;
-    group.add(b);
-  }
-  // teachers' cars
-  [[-30, 34], [-27, 34], [-24, 34]].forEach(([x, z], i) => {
-    const c = cars[i % cars.length].clone();
-    c.position.set(x, 0.05, z);
-    group.add(c);
-  });
-  // autos waiting outside the gate
-  [[12, 47.4], [16, 47.4]].forEach(([x, z]) => {
-    const a = auto.clone();
-    a.position.set(x, 0.06, z);
-    a.rotation.y = -Math.PI / 2;
-    group.add(a);
-  });
+  // the school's own vehicles are moved by the school-day simulation
+  const fleet = {
+    buses: [0, 1, 2, 3].map(() => {
+      const o = bus.clone();
+      o.visible = false;
+      group.add(o);
+      return new Driver(o);
+    }),
+    autos: [0, 1].map(() => {
+      const o = auto.clone();
+      o.visible = false;
+      group.add(o);
+      return new Driver(o);
+    }),
+    cars: [0, 1, 2].map((i) => {
+      const o = cars[i].clone();
+      o.visible = false;
+      group.add(o);
+      return new Driver(o);
+    }),
+  };
 
-  // traffic on the main road
+  // through traffic on the main road (it waits while a school bus turns at the gate)
   const traffic = [];
   const lane = (dir) => (dir > 0 ? 49.5 : 56.5);
-  for (let i = 0; i < 14; i++) {
+  for (let i = 0; i < P.traffic; i++) {
     const dir = i % 2 ? 1 : -1;
     const kind = i % 7 === 0 ? bus : i % 3 === 0 ? auto : cars[i % cars.length];
     const v = kind.clone();
     v.rotation.y = dir > 0 ? Math.PI / 2 : -Math.PI / 2;
     group.add(v);
-    traffic.push({ obj: v, dir, x: rng() * 600 - 300, speed: kind === bus ? 7 : kind === auto ? 8 : 9 + rng() * 5, z: lane(dir) });
+    traffic.push({ obj: v, dir, x: rng() * 600 - 300, speed: kind === bus ? 7 : kind === auto ? 8 : 9 + rng() * 5, v: 0, z: lane(dir) });
   }
 
+  let gateBusy = false;
   return {
     group,
+    fleet,
+    setGateBusy(b) {
+      gateBusy = b;
+    },
     update(dt) {
+      for (const d of [...fleet.buses, ...fleet.autos, ...fleet.cars]) d.update(dt);
+      // keep a safe gap to the vehicle ahead in the same lane and stop for turning buses
       for (const t of traffic) {
-        // traffic slows down at the zebra crossing in front of the school
-        const slow = Math.abs(t.x) < 25 ? 0.55 : 1;
-        t.x += t.dir * t.speed * slow * dt;
+        let want = t.speed * (Math.abs(t.x) < 25 ? 0.6 : 1);
+        // stop at the line before the gate while a school vehicle turns in or out
+        const stopLine = t.dir > 0 ? -22 : 22;
+        const toLine = (stopLine - t.x) * t.dir;
+        if (gateBusy && toLine > 0 && toLine < 16) want = Math.min(want, toLine * 0.7);
+        for (const o of traffic) {
+          if (o === t || o.dir !== t.dir) continue;
+          const gap = (o.x - t.x) * t.dir;
+          if (gap > 0 && gap < 11) want = Math.min(want, Math.max(0, (gap - 6) * 1.5));
+        }
+        t.v += (want - t.v) * Math.min(1, dt * 2);
+        t.x += t.dir * t.v * dt;
         if (t.x > 320) t.x = -320;
         if (t.x < -320) t.x = 320;
         t.obj.position.set(t.x, 0.06, t.z);

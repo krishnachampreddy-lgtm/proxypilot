@@ -37,7 +37,7 @@ function LeaveRequest({ l, onDone, onError, onNotice }) {
   };
 
   return (
-    <div className="rounded-md border border-line bg-paper/70 p-4">
+    <div className={`rounded-md border p-4 ${l.urgent ? 'border-clay/50 bg-clay-soft/40' : 'border-line bg-paper/70'}`}>
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="font-display text-lg font-medium text-ink">{l.facultyName}</div>
@@ -51,7 +51,11 @@ function LeaveRequest({ l, onDone, onError, onNotice }) {
             )}
           </div>
         </div>
-        <span className="rounded bg-brass-soft px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide text-brass-2">New</span>
+        {l.urgent ? (
+          <span className="rounded bg-clay px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wide text-paper">Urgent · today</span>
+        ) : (
+          <span className="rounded bg-brass-soft px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide text-brass-2">New</span>
+        )}
       </div>
       <p className="mt-2 text-sm italic text-ink/70">“{l.rawText}”</p>
       {l.classes.length > 0 && (
@@ -72,7 +76,7 @@ function LeaveRequest({ l, onDone, onError, onNotice }) {
             value={note}
             onChange={(e) => setNote(e.target.value)}
             placeholder="Why are you declining? e.g. Internal exams that week — please reschedule."
-            className="w-full rounded-md border border-line bg-white p-2.5 text-sm outline-none focus:border-ink"
+            className="w-full rounded-md border border-line bg-white p-2.5 text-sm outline-none focus:border-brass"
           />
           <div className="flex gap-2">
             <Button variant="ghost" className="!border-clay !text-clay" disabled={busy || note.trim().length < 3} onClick={() => decide('decline')}>
@@ -208,7 +212,7 @@ export default function Hod() {
       {data.leaveRequests.length > 0 && (
         <section className="rounded-lg border-2 border-brass bg-white/95 p-5 shadow-[0_12px_32px_-18px_rgba(168,122,42,0.6)]">
           <div className="mb-4 flex items-center gap-3">
-            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-brass font-mono text-sm font-semibold text-ink">{data.leaveRequests.length}</span>
+            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-brass font-mono text-sm font-semibold text-paper">{data.leaveRequests.length}</span>
             <div>
               <h2 className="font-display text-xl font-medium text-ink">Leave requests</h2>
               <p className="text-sm text-muted">Approve to arrange substitutes automatically — same-subject teachers first, others as backup. Declining needs a reason, which the teacher will see.</p>
@@ -285,7 +289,7 @@ export default function Hod() {
                 type="month"
                 value={month}
                 onChange={(e) => setMonth(e.target.value)}
-                className="rounded-md border border-line bg-white px-2.5 py-1.5 text-sm outline-none focus:border-ink"
+                className="rounded-md border border-line bg-white px-2.5 py-1.5 text-sm outline-none focus:border-brass"
               />
               <Button variant="ghost" disabled={reportBusy || !month} onClick={downloadReport}>
                 {reportBusy ? 'Preparing…' : 'Download report'}

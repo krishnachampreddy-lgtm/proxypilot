@@ -4,7 +4,7 @@ import api, { errorText } from '../api';
 import { Logo } from '../components/Layout.jsx';
 import { Button, ErrorBox } from '../components/ui.jsx';
 
-const input = 'w-full rounded-md border border-line px-3 py-2 text-sm outline-none focus:border-ink';
+const input = 'w-full rounded-md border border-line px-3 py-2 text-sm outline-none focus:border-brass';
 const SUBJECTS = ['English', 'DBMS', 'Python', 'DSA', 'Aptitude'];
 
 // First sign-in with Google / Gmail: choose faculty or student

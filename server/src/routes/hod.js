@@ -54,6 +54,7 @@ async function buildOverview() {
       periods: l.periods,
       facultyName: l.faculty_name,
       appliedAt: l.created_at,
+      urgent: l.urgent,
       balance: leaveBalance(await Leaves.byFaculty(l.faculty_id), String(l.date).slice(0, 4)),
       classes,
     });

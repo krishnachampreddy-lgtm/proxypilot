@@ -33,13 +33,18 @@ export default function Faculty() {
   const [multi, setMulti] = useState(false);
   const [skip, setSkip] = useState([]); // periods the teacher un-ticked
   const [session, setSession] = useState('full'); // full | morning | afternoon | periods
+  const [summary, setSummary] = useState(null);
+  const [sickBusy, setSickBusy] = useState(false);
+  const [sickError, setSickError] = useState('');
+  const [sickDone, setSickDone] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const [l, r, s] = await Promise.all([api.get('/leaves/mine'), api.get('/proxies/mine'), api.get('/leaves/schedule')]);
+      const [l, r, s, m] = await Promise.all([api.get('/leaves/mine'), api.get('/proxies/mine'), api.get('/leaves/schedule'), api.get('/leaves/summary')]);
       setLeaves(l.data.leaves);
       setRequests(r.data);
       setSchedule(s.data);
+      setSummary(m.data);
     } catch (err) {
       setError(errorText(err));
     }
@@ -106,6 +111,27 @@ export default function Faculty() {
   };
   const pretty = date ? new Date(`${date}T00:00:00Z`).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' }) : '';
 
+  // One tap: full-day leave for today, flagged urgent for the HOD
+  const sickToday = async () => {
+    if (!window.confirm('Apply full-day leave for today? The HOD will see it as urgent.')) return;
+    setSickBusy(true);
+    setSickError('');
+    setResult(null);
+    try {
+      await api.post('/leaves', { urgent: true, session: 'full', text: 'Unwell today, cannot come to college' });
+      setSickDone(true);
+      load();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } catch (err) {
+      setSickError(errorText(err));
+    } finally {
+      setSickBusy(false);
+    }
+  };
+
+  const today = schedule?.today;
+  const appliedToday = today && schedule.leaveDates.includes(today);
+
   const cancelLeave = async (id) => {
     if (!window.confirm('Cancel this leave request?')) return;
     try {
@@ -129,10 +155,33 @@ export default function Faculty() {
 
   return (
     <div className="space-y-6">
+      {schedule && !appliedToday && (
+        <div className="flex flex-col gap-3 rounded-lg border border-clay/30 bg-white/90 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <div className="font-display text-lg font-medium text-ink">Not well today?</div>
+            <p className="text-sm text-muted">One tap applies a full-day leave for today and alerts the HOD right away.</p>
+          </div>
+          <button
+            onClick={sickToday}
+            disabled={sickBusy}
+            className="shrink-0 rounded-md bg-clay px-5 py-3 text-sm font-semibold text-paper shadow-sm transition hover:brightness-110 disabled:opacity-60"
+          >
+            {sickBusy ? 'Sending…' : 'I’m sick today'}
+          </button>
+        </div>
+      )}
+      <ErrorBox text={sickError} />
+      {sickDone && (
+        <div className="flex items-start justify-between gap-3 rounded-lg border border-sage/40 bg-sage-soft px-4 py-3 text-sm text-sage">
+          <span><b>Get well soon.</b> Today’s leave was sent to the HOD as urgent. You’ll see the decision under “My leaves” and in the bell.</span>
+          <button onClick={() => setSickDone(false)} className="font-semibold">×</button>
+        </div>
+      )}
+
       {requests.waiting.length > 0 && (
         <section className="rounded-lg border-2 border-brass bg-white/95 p-5 shadow-[0_12px_32px_-18px_rgba(168,122,42,0.6)]">
           <div className="mb-4 flex items-center gap-3">
-            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-brass font-mono text-sm font-semibold text-ink">{requests.waiting.length}</span>
+            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-brass font-mono text-sm font-semibold text-paper">{requests.waiting.length}</span>
             <div>
               <h2 className="font-display text-xl font-medium text-ink">
                 {requests.waiting.length === 1 ? 'A colleague needs your help' : 'Colleagues need your help'}
@@ -295,12 +344,12 @@ export default function Faculty() {
                 value={text}
                 onChange={(e) => setText(e.target.value)}
                 placeholder={date ? 'e.g. Family function' : "e.g. Down with fever, can't come tomorrow…"}
-                className="w-full rounded-md border border-line p-3 text-sm outline-none focus:border-ink"
+                className="w-full rounded-md border border-line p-3 text-sm outline-none focus:border-brass"
               />
               {!date && (
                 <div className="mt-2 flex flex-wrap gap-2">
                   {EXAMPLES.map((ex) => (
-                    <button type="button" key={ex} onClick={() => setText(ex)} className="rounded-full bg-paper px-3 py-1 text-xs text-ink/80 hover:bg-paper-2">
+                    <button type="button" key={ex} onClick={() => setText(ex)} className="rounded-full bg-paper px-3 py-1 text-left text-xs text-ink/80 hover:bg-paper-2">
                       {ex.length > 45 ? ex.slice(0, 45) + '…' : ex}
                     </button>
                   ))}
@@ -334,7 +383,10 @@ export default function Faculty() {
                 <div key={l._id} className="rounded-md border border-line p-3">
                   <div className="flex items-center justify-between gap-2">
                     <span className="font-semibold text-ink">{l.prettyDate}</span>
-                    <LeaveStatus status={l.status} />
+                    <span className="flex items-center gap-1.5">
+                      {l.urgent && <span className="rounded bg-clay px-1.5 py-0.5 font-mono text-[10px] font-semibold uppercase text-paper">Urgent</span>}
+                      <LeaveStatus status={l.status} />
+                    </span>
                   </div>
                   <p className="mt-1 text-sm font-medium text-ink/80">
                     {leaveTypeLabel(l.leaveType, l.periods)}
@@ -371,6 +423,25 @@ export default function Faculty() {
       </div>
 
       <div className="space-y-6 lg:col-span-2">
+        {summary && (
+          <Card title={`My ${summary.year} at a glance`}>
+            <div className="grid grid-cols-2 gap-3">
+              {[
+                ['Leaves left', `${summary.balance.left}`, `of ${summary.balance.total}`, 'text-ink'],
+                ['Leaves taken', `${summary.leavesTaken}`, summary.leavesPending ? `+${summary.leavesPending} waiting` : 'approved', 'text-ink'],
+                ['Proxies I took', `${summary.proxiesThisYear}`, `${summary.proxiesThisMonth} this month`, 'text-sage'],
+                ['Classes covered for me', `${summary.coveredForMe}`, 'by colleagues', 'text-brass-2'],
+              ].map(([label, value, sub, tone]) => (
+                <div key={label} className="rounded-md border border-line bg-paper/50 p-3">
+                  <div className="font-mono text-[10px] uppercase tracking-wider text-muted">{label}</div>
+                  <div className={`mt-0.5 font-display text-3xl font-medium tabular-nums ${tone}`}>{value}</div>
+                  <div className="text-xs text-muted">{sub}</div>
+                </div>
+              ))}
+            </div>
+          </Card>
+        )}
+
         {requests.waiting.length === 0 && (
           <Card title="Proxy requests for you" subtitle="When a colleague is on leave and you are the best fit, the request shows up here.">
             <Empty>No requests right now.</Empty>

@@ -102,9 +102,9 @@ export const Leaves = {
   create: async (l) =>
     (
       await q(
-        `INSERT INTO leaves (faculty_id, date, raw_text, reason, periods, ai_used, status, leave_type, group_id)
-         VALUES ($1,$2,$3,$4,$5,$6,'pending',$7,$8) RETURNING *`,
-        [l.facultyId, l.date, l.rawText, l.reason, l.periods, l.aiUsed, l.leaveType || 'full', l.groupId ?? null]
+        `INSERT INTO leaves (faculty_id, date, raw_text, reason, periods, ai_used, status, leave_type, group_id, urgent)
+         VALUES ($1,$2,$3,$4,$5,$6,'pending',$7,$8,$9) RETURNING *`,
+        [l.facultyId, l.date, l.rawText, l.reason, l.periods, l.aiUsed, l.leaveType || 'full', l.groupId ?? null, Boolean(l.urgent)]
       )
     )[0],
   byId: async (id) => (await q('SELECT * FROM leaves WHERE id = $1', [id]))[0],
@@ -127,7 +127,7 @@ export const Leaves = {
   pending: () =>
     q(
       `SELECT l.*, u.name AS faculty_name, u.subjects AS faculty_subjects FROM leaves l JOIN users u ON u.id = l.faculty_id
-       WHERE l.status = 'pending' ORDER BY l.date, l.id`
+       WHERE l.status = 'pending' ORDER BY l.urgent DESC, l.date, l.id`
     ),
   upcoming: (today) =>
     q(

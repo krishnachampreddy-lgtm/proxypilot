@@ -24,6 +24,15 @@ ProxyPilot turns that whole chain into one automated workflow inside the app:
 8. **Students** see the substitute on their timetable.
 9. **HOD dashboard** — coverage stats, proxy-load fairness chart, weekly note, and a **monthly report download** (CSV that opens in Excel: date, teacher, leave type, reason, HOD decision, period, class, subject, substitute, cover status, plus a summary).
 
+**Also included**
+
+- **"I'm sick today"** — one tap applies a full-day leave for today, marked *urgent* and shown first to the HOD.
+- **Notification bell** — new cover requests, HOD decisions, "your class is covered" and student timetable changes, with an unread count.
+- **Teacher summary** — leaves left, leaves taken, proxies taken this year/month, and classes colleagues covered.
+- **Install as an app** — a Progressive Web App: "Install app" on Android/desktop, Add to Home Screen on iPhone.
+- **Mobile-friendly** — every screen works on phones.
+- **Home page** — explains the product with a one-tap demo.
+
 **Subjects:** English, DBMS, Python, DSA, Aptitude.
 
 ## Login
@@ -111,6 +120,8 @@ With `EMAIL_DEV_LOG=1`, OTP codes are printed in the terminal instead of emailed
 | POST | `/api/leaves` | faculty | `{ date, endDate?, session, periods?, text? }` → pending leave |
 | GET | `/api/leaves/schedule` | faculty | Weekly classes, leave dates, balance |
 | GET | `/api/leaves/mine` | faculty | My leaves, status, HOD note, cover |
+| GET | `/api/leaves/summary` | faculty | My year at a glance |
+| GET | `/api/notifications` | all | Items for the bell |
 | POST | `/api/leaves/:id/cancel` | faculty | Withdraw a pending leave (all its days) |
 | GET | `/api/proxies/mine` | faculty | Requests waiting for me + accepted |
 | POST | `/api/proxies/:id/respond` | faculty | `{ action: "accept" \| "decline" }` |

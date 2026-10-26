@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { Link } from 'react-router-dom';
+import { useEffect, useState } from 'react';
 import { useAuth } from '../auth.jsx';
 import api, { errorText } from '../api';
 import { Logo } from '../components/Layout.jsx';
-import AmbientScene from '../components/AmbientScene.jsx';
+import CampusScene, { timeOfDayNow } from '../components/campus/CampusScene.jsx';
 import { Button, ErrorBox } from '../components/ui.jsx';
 
 const DEMO = [
@@ -13,14 +14,14 @@ const DEMO = [
   { label: 'Aarav Sharma', role: 'Student · CSE-2A', email: 'aarav@college.edu' },
 ];
 
-const input = 'w-full rounded-md border border-line bg-white px-3 py-2.5 text-sm text-ink outline-none placeholder:text-muted/70 focus:border-ink';
+const input = 'w-full rounded-md border border-line bg-white px-3 py-2.5 text-sm text-ink outline-none placeholder:text-muted/70 focus:border-brass';
 const link = 'font-medium text-brass-2 hover:underline';
 const ROLE = { faculty: 'Faculty', hod: 'HOD', student: 'Student' };
 
 function Avatar({ name, src }) {
   if (src) return <img src={src} alt="" className="h-9 w-9 rounded-full" referrerPolicy="no-referrer" />;
   return (
-    <span className="flex h-9 w-9 items-center justify-center rounded-full bg-ink font-display text-sm text-brass">
+    <span className="flex h-9 w-9 items-center justify-center rounded-full bg-board font-display text-base text-brass">
       {name.trim().charAt(0).toUpperCase()}
     </span>
   );
@@ -35,6 +36,11 @@ export default function Login() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
+
+  // "Try the demo" from the home page jumps straight to the demo buttons
+  useEffect(() => {
+    if (window.location.hash === '#demo') setTimeout(() => document.getElementById('demo')?.scrollIntoView({ behavior: 'smooth' }), 150);
+  }, []);
 
   const run = async (fn) => {
     setBusy(true);
@@ -77,41 +83,40 @@ export default function Login() {
     });
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-ink text-paper">
-      <AmbientScene theme="dark" className="absolute inset-0" />
-      {/* soft vignette so text stays readable over the scene */}
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_30%_40%,transparent_0%,rgba(11,22,38,0.35)_55%,rgba(11,22,38,0.85)_100%)]" />
-      <div className="grain pointer-events-none absolute inset-0" />
+    <div className="relative min-h-screen overflow-hidden bg-paper text-ink">
+      <CampusScene mode="ambient" time={timeOfDayNow()} className="fixed inset-0" />
+      {/* soft wash so text stays readable over the campus */}
+      <div className="pointer-events-none fixed inset-0 bg-[linear-gradient(90deg,rgba(5,8,7,0.82)_0%,rgba(5,8,7,0.45)_55%,rgba(5,8,7,0.6)_100%)]" />
 
       <div className="relative mx-auto grid min-h-screen max-w-6xl gap-10 px-5 py-8 lg:grid-cols-[1.15fr_1fr] lg:items-center lg:px-8">
         <section className="flex flex-col justify-between gap-10 lg:min-h-[78vh]">
-          <Logo dark />
+          <Link to="/" aria-label="ProxyPilot home"><Logo dark /></Link>
           <div>
-            <p className="font-mono text-[11px] uppercase tracking-[0.25em] text-brass">Proxy lectures, handled</p>
-            <h1 className="mt-4 font-display text-[2.6rem] font-normal leading-[1.05] tracking-tight text-paper sm:text-6xl">
+            <p className="flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.2em] text-ink/75"><span className="h-1.5 w-1.5 rounded-full bg-sage shadow-[0_0_10px_2px_rgba(98,211,155,0.6)]" />Proxy lectures, handled</p>
+            <h1 className="mt-4 font-display text-[2.8rem] leading-[1.02] tracking-tight text-ink sm:text-7xl">
               Every class,<br />
-              <em className="font-normal text-brass">covered.</em>
+              <em className="text-brass">covered.</em>
             </h1>
-            <p className="mt-6 max-w-md text-[15px] leading-relaxed text-paper/70">
-              A teacher writes one line about their leave. ProxyPilot reads it, finds the fairest free colleague for each period,
-              gets a yes, and tells the class. No calls. No WhatsApp chains.
+            <p className="mt-6 max-w-md text-[15px] leading-relaxed text-ink/75">
+              A teacher applies for leave. The HOD approves. ProxyPilot finds the fairest free colleague for each class,
+              gets a yes, and tells the students. No calls. No WhatsApp chains.
             </p>
 
-            <div className="mt-8 max-w-sm rounded-md border border-paper/10 bg-ink-2/70 p-4 font-mono text-xs backdrop-blur">
-              <div className="flex items-center justify-between text-paper/50">
+            <div className="glass mt-8 max-w-sm rounded-[14px] p-4 font-mono text-xs">
+              <div className="flex items-center justify-between text-ink/55">
                 <span>TODAY · P4 · 11:50</span>
                 <span className="flex items-center gap-1.5 text-sage"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-sage" /> live</span>
               </div>
-              <div className="mt-3 text-paper/85">CSE-2B · DBMS</div>
-              <div className="mt-1 text-paper/50 line-through">Dr. Anita Mehta</div>
+              <div className="mt-3 text-ink/90">CSE-2B · DBMS</div>
+              <div className="mt-1 text-ink/50 line-through">Dr. Anita Mehta</div>
               <div className="mt-1 text-brass">→ Prof. Ravi Rao accepted · 38 s</div>
             </div>
           </div>
-          <p className="hidden font-mono text-[11px] uppercase tracking-wider text-paper/40 lg:block">Smart Automation Scenario Challenge</p>
+          <p className="hidden font-mono text-[11px] uppercase tracking-wider text-ink/45 lg:block">Every class, covered</p>
         </section>
 
         <section className="w-full max-w-md justify-self-center lg:justify-self-end">
-          <div className="space-y-4 rounded-lg bg-paper p-6 text-ink shadow-[0_30px_80px_-30px_rgba(0,0,0,0.6)] sm:p-7">
+          <div className="glass space-y-4 rounded-[14px] p-6 text-ink shadow-[0_30px_80px_-30px_rgba(0,0,0,0.8)] sm:p-7">
             {saved.length > 0 && !codeSent && (
               <div>
                 <p className="mb-2 font-mono text-[11px] uppercase tracking-wider text-muted">Continue as</p>
@@ -135,7 +140,7 @@ export default function Login() {
             )}
 
             <div>
-              <h2 className="font-display text-2xl font-medium tracking-tight">{codeSent ? 'Check your inbox' : 'Sign in'}</h2>
+              <h2 className="font-display text-3xl tracking-tight">{codeSent ? 'Check your inbox' : 'Sign in'}</h2>
               <p className="mt-1 text-sm text-muted">{codeSent ? `We sent a 6-digit code to ${email}.` : 'With your Gmail. No password needed.'}</p>
             </div>
 
@@ -166,13 +171,13 @@ export default function Login() {
 
           </div>
 
-          <div className="mt-5">
-            <p className="mb-2 font-mono text-[11px] uppercase tracking-wider text-paper/50">Try the demo as</p>
+          <div id="demo" className="mt-5 scroll-mt-6">
+            <p className="mb-2 font-mono text-[11px] uppercase tracking-wider text-ink/60">Try the demo as</p>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
               {DEMO.map((d) => (
-                <button key={d.email} disabled={busy} onClick={() => run(() => login(d.email, 'demo123'))} className="rounded-md border border-paper/15 bg-ink-2/60 px-3 py-2 text-left backdrop-blur transition hover:border-brass/70">
-                  <span className="block truncate text-[13px] font-medium text-paper">{d.label}</span>
-                  <span className="block truncate font-mono text-[10px] uppercase tracking-wide text-paper/45">{d.role.split(' · ')[0]}</span>
+                <button key={d.email} disabled={busy} onClick={() => run(() => login(d.email, 'demo123'))} className="glass rounded-[11px] px-3 py-2 text-left transition hover:border-brass/70">
+                  <span className="block truncate text-[13px] font-medium text-ink">{d.label}</span>
+                  <span className="block truncate font-mono text-[10px] uppercase tracking-wide text-ink/50">{d.role.split(' · ')[0]}</span>
                 </button>
               ))}
             </div>

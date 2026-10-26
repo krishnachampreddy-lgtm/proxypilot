@@ -1,25 +1,30 @@
 @import "tailwindcss";
 
-/* ProxyPilot palette: academic navy, warm paper, brass accent */
+/* ProxyPilot school theme: chalkboard night, chalk-white text, pencil-yellow accent.
+   Token names are kept from the earlier light theme so every screen switches at once:
+   "ink" = main text / primary button, "paper" = the dark page, "white" = glass surfaces. */
 @theme {
-  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
-  --font-display: "Fraunces", Georgia, serif;
-  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  --font-sans: "Geist", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Instrument Serif", Georgia, serif;
+  --font-mono: "Geist Mono", ui-monospace, monospace;
 
-  --color-ink: #0b1626;
-  --color-ink-2: #13233a;
-  --color-ink-3: #1d3150;
-  --color-paper: #f5f1ea;
-  --color-paper-2: #ebe5da;
-  --color-line: #ddd5c7;
-  --color-muted: #6b7280;
-  --color-brass: #c8973f;
-  --color-brass-2: #a87a2a;
-  --color-brass-soft: #f3e6cc;
-  --color-sage: #4f7a63;
-  --color-sage-soft: #dfeae2;
-  --color-clay: #b4553f;
-  --color-clay-soft: #f4dfd8;
+  --color-ink: #edf2ec;
+  --color-ink-2: #d9e2db;
+  --color-ink-3: #c5d1c8;
+  --color-paper: #07100c;
+  --color-paper-2: #14201a;
+  --color-white: rgb(11 20 16 / 0.62);
+  --color-snow: #ffffff;
+  --color-line: #2a3a32;
+  --color-muted: #94a59b;
+  --color-brass: #f4c542;
+  --color-brass-2: #f4c542;
+  --color-brass-soft: #2e2912;
+  --color-sage: #62d39b;
+  --color-sage-soft: #11291d;
+  --color-clay: #f07a62;
+  --color-clay-soft: #301812;
+  --color-board: #1f3d30;
 }
 
 html, body, #root { min-height: 100%; }
@@ -29,6 +34,28 @@ body {
   color: var(--color-ink);
   -webkit-font-smoothing: antialiased;
 }
+
+/* the display serif reads best a touch larger and never bold */
+.font-display { font-weight: 400 !important; letter-spacing: -0.01em; }
+
+/* frosted glass surface, same as the Agri Doctor cards */
+.glass {
+  background: rgb(6 11 9 / 0.5);
+  border: 1px solid rgb(200 235 220 / 0.14);
+  -webkit-backdrop-filter: blur(12px) saturate(1.1);
+  backdrop-filter: blur(12px) saturate(1.1);
+}
+
+/* shown until the 3D campus draws, and if a device can't draw it */
+.campus-fallback {
+  background:
+    radial-gradient(ellipse at 70% 20%, rgb(244 197 66 / 0.18), transparent 55%),
+    radial-gradient(ellipse at 20% 80%, rgb(98 211 155 / 0.12), transparent 60%),
+    linear-gradient(180deg, #16263a 0%, #1d3a2e 55%, #0a120e 100%);
+}
+
+input, textarea, select { color-scheme: dark; }
+input::placeholder, textarea::placeholder { color: rgb(148 165 155 / 0.75); }
 
 /* fine paper grain so flat areas don't look generated */
 .grain::after {

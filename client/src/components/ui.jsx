@@ -1,10 +1,10 @@
 export function Card({ title, subtitle, right, children, className = '' }) {
   return (
-    <section className={`min-w-0 rounded-lg border border-line bg-white/90 p-5 shadow-[0_1px_0_rgba(11,22,38,0.04),0_8px_24px_-16px_rgba(11,22,38,0.25)] backdrop-blur-sm ${className}`}>
+    <section className={`glass min-w-0 rounded-[14px] p-5 shadow-[0_18px_40px_-24px_rgba(0,0,0,0.7)] ${className}`}>
       {(title || right) && (
         <div className="mb-4 flex items-start justify-between gap-3">
           <div>
-            <h2 className="font-display text-lg font-medium text-ink">{title}</h2>
+            <h2 className="font-display text-[1.45rem] leading-tight text-ink">{title}</h2>
             {subtitle && <p className="text-sm text-muted">{subtitle}</p>}
           </div>
           {right}
@@ -38,9 +38,9 @@ export function Empty({ children }) {
 export function Button({ variant = 'primary', className = '', ...props }) {
   const styles = {
     primary: 'bg-ink text-paper hover:bg-ink-3 disabled:bg-ink/40',
-    success: 'bg-sage text-white hover:bg-sage/90 disabled:bg-sage/40',
-    brass: 'bg-brass text-ink hover:bg-brass-2 hover:text-paper disabled:opacity-50',
-    ghost: 'border border-line bg-white text-ink hover:border-ink/40 disabled:opacity-50',
+    success: 'bg-sage text-paper hover:bg-sage/90 disabled:bg-sage/40',
+    brass: 'bg-brass text-paper hover:brightness-110 disabled:opacity-50',
+    ghost: 'border border-line bg-white text-ink hover:border-brass/60 disabled:opacity-50',
   };
-  return <button className={`rounded-md px-4 py-2 text-sm font-semibold transition ${styles[variant]} ${className}`} {...props} />;
+  return <button className={`rounded-[11px] px-4 py-2 text-sm font-semibold transition ${styles[variant]} ${className}`} {...props} />;
 }

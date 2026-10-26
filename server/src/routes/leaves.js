@@ -18,6 +18,7 @@ const LeaveBody = z
     endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Pick a valid end date').optional(),
     periods: z.array(z.number().int().min(1).max(6)).max(6).optional(),
     session: z.enum(['full', 'morning', 'afternoon', 'periods']).optional(),
+    urgent: z.boolean().optional(),
   })
   .refine((b) => b.date || b.text.length >= 5, { message: 'Pick a date on the calendar or describe your leave' });
 
@@ -32,7 +33,8 @@ router.post('/', validate(LeaveBody), async (req, res) => {
   const scheduleText = myClasses.map((c) => `${c.day} P${c.period} ${c.class_name} ${c.subject}`).join('; ');
 
   // 1. Read the message; a date picked on the calendar always wins
-  const { text, date, periods, session, endDate } = req.body;
+  const { text, periods, session, endDate, urgent } = req.body;
+  const date = urgent ? today : req.body.date; // "I'm sick today" is always for today
   if (date && (date < today || date > addDays(today, 120))) {
     return res.status(400).json({ error: 'Pick a date between today and the next 4 months.' });
   }
@@ -77,6 +79,7 @@ router.post('/', validate(LeaveBody), async (req, res) => {
     periods: affected.map((c) => c.period),
     aiUsed: parsed.aiUsed,
     leaveType,
+    urgent: Boolean(urgent),
   });
 
   // 4. Goes to the HOD first; cover is arranged only after approval
@@ -171,11 +174,36 @@ router.get('/mine', async (req, res) => {
       leaveType: l.leave_type,
       status: l.status,
       hodNote: l.hod_note,
+      urgent: l.urgent,
       groupId: l.group_id,
       groupDays: l.group_id ? leaves.filter((x) => x.group_id === l.group_id).length : 1,
       proxies: proxies.filter((p) => p.leave === l.id),
     })),
     balance: leaveBalance(leaves, todayIST().slice(0, 4)),
+  });
+});
+
+// My year at a glance: leaves used, proxies taken, classes covered for me
+router.get('/summary', async (req, res) => {
+  const today = todayIST();
+  const year = today.slice(0, 4);
+  const month = today.slice(0, 7);
+  const [leaves, took, coveredForMe] = await Promise.all([
+    Leaves.byFaculty(req.user.id),
+    Proxies.where(`assigned_to = $1 AND status = 'accepted' AND date LIKE $2`, [req.user.id, `${year}%`]),
+    Proxies.where(`absent_faculty_id = $1 AND status = 'accepted' AND date LIKE $2`, [req.user.id, `${year}%`]),
+  ]);
+  const thisYear = leaves.filter((l) => String(l.date).startsWith(year));
+  const days = (rows) => rows.reduce((s, l) => s + leaveCost(l.leave_type), 0);
+  res.json({
+    year,
+    balance: leaveBalance(leaves, year),
+    leavesTaken: days(thisYear.filter((l) => l.status === 'approved')),
+    leavesPending: days(thisYear.filter((l) => l.status === 'pending')),
+    leavesDeclined: thisYear.filter((l) => l.status === 'declined').length,
+    proxiesThisYear: took.length,
+    proxiesThisMonth: took.filter((p) => String(p.date).startsWith(month)).length,
+    coveredForMe: coveredForMe.length,
   });
 });
 

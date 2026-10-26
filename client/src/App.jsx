@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import { useAuth } from './auth.jsx';
 import Layout from './components/Layout.jsx';
 import Login from './pages/Login.jsx';
+import Home from './pages/Home.jsx';
 import Welcome from './pages/Welcome.jsx';
 import Faculty from './pages/Faculty.jsx';
 import Hod from './pages/Hod.jsx';
@@ -18,10 +19,12 @@ function Protected({ role, children }) {
 }
 
 export default function App() {
-  const { user } = useAuth();
+  const { user, saved } = useAuth();
   return (
     <Routes>
-      <Route path="/" element={user ? <Navigate to={home(user)} replace /> : <Login />} />
+      {/* returning users on this device skip the home page and go straight to their saved names */}
+      <Route path="/" element={user ? <Navigate to={home(user)} replace /> : saved.length ? <Navigate to="/login" replace /> : <Home />} />
+      <Route path="/login" element={user ? <Navigate to={home(user)} replace /> : <Login />} />
       <Route path="/welcome" element={!user ? <Navigate to="/" replace /> : user.needsProfile ? <Welcome /> : <Navigate to={home(user)} replace />} />
       <Route path="/faculty" element={<Protected role="faculty"><Faculty /></Protected>} />
       <Route path="/hod" element={<Protected role="hod"><Hod /></Protected>} />

@@ -159,9 +159,15 @@ export default function Home() {
     if (stop !== null) endTour();
     scene.current?.jumpTo(m);
   };
+  const [inside, setInside] = useState(null); // which room the camera is in (null = outside)
   const lookInside = (room) => {
     if (stop !== null) endTour();
+    setInside(room);
     scene.current?.lookInside(room);
+  };
+  const lookOutside = () => {
+    setInside(null);
+    scene.current?.lookOutside();
   };
   const changeQuality = (q) => {
     if (q === quality) return;
@@ -216,6 +222,7 @@ export default function Home() {
           onClock={onClock}
           onBell={onBell}
           onReady={(ok) => setLive(ok)}
+          onInside={(on) => setInside((r) => (on ? r || 'room' : null))}
           frameShift={frame}
         />
         {progress > 0 && progress < 1 && (
@@ -266,10 +273,20 @@ export default function Home() {
               <div className="mt-3 flex flex-wrap items-center gap-1.5">
                 <span className="mr-0.5 font-mono text-[10px] uppercase tracking-[0.14em] text-ink/55">Look inside</span>
                 {[['classroom', 'Classroom'], ['staff', 'Staff room'], ['hod', 'HOD office'], ['library', 'Library']].map(([k, label]) => (
-                  <button key={k} onClick={() => lookInside(k)} className="rounded-[8px] border border-line px-2 py-1 font-mono text-[10px] uppercase tracking-[0.1em] text-ink/75 hover:border-brass/60 hover:text-ink">
+                  <button
+                    key={k}
+                    onClick={() => lookInside(k)}
+                    aria-pressed={inside === k}
+                    className={`rounded-[8px] border px-2 py-1 font-mono text-[10px] uppercase tracking-[0.1em] ${inside === k ? 'border-brass/70 bg-brass/15 text-ink' : 'border-line text-ink/75 hover:border-brass/60 hover:text-ink'}`}
+                  >
                     {label}
                   </button>
                 ))}
+                {inside && (
+                  <button onClick={lookOutside} className="rounded-[8px] bg-brass px-2.5 py-1 font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-paper hover:brightness-110">
+                    ← Back outside
+                  </button>
+                )}
               </div>
               <div className="mt-2 hidden items-center gap-1.5 sm:flex">
                 <span className="mr-0.5 font-mono text-[10px] uppercase tracking-[0.14em] text-ink/55">Quality</span>

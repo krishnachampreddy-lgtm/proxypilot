@@ -80,7 +80,7 @@ export function shotView(phase, i) {
   return { cam: shot[0], target: shot[1], inside: Boolean(shot[2]?.inside) };
 }
 
-export function createCampus(container, { mode = 'hero', time = 'morning', startMinutes, onProgress, onReady, onClock, onBell, view, quality = 'auto' } = {}) {
+export function createCampus(container, { mode = 'hero', time = 'morning', startMinutes, onProgress, onReady, onClock, onBell, onInside, view, quality = 'auto' } = {}) {
   const still = mode === 'still';
   const forcedQ = new URLSearchParams(window.location.search).get('q');
   const P = still ? PROFILES[forcedQ] || PROFILES.still : pickProfile(quality);
@@ -299,6 +299,7 @@ export function createCampus(container, { mode = 'hero', time = 'morning', start
   };
   let insideShot = false;
   const setInside = (on) => {
+    if (on !== insideShot) onInside?.(on); // the page shows a "Back outside" button while the camera is in a room
     insideShot = on;
     camera.near = on ? 0.12 : 0.6;
     camera.updateProjectionMatrix();
@@ -722,6 +723,11 @@ export function createCampus(container, { mode = 'hero', time = 'morning', start
       const inSession = (m > 8 * 60 + 40 && m < 12 * 60 + 30) || (m > 13 * 60 + 10 && m < 15 * 60 + 20);
       if (!inSession) this.jumpTo(9 * 60 + 30);
       cutTo(v[0], v[1], true);
+    },
+    /** back out of a room to the view over the whole campus; the director carries on from there */
+    lookOutside() {
+      userUntil = performance.now() + 8000;
+      cutTo(v0.cam, v0.target, false);
     },
     endTour() {
       touring = false;

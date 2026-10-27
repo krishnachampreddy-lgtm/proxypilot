@@ -1,44 +1,167 @@
 /*
-  Classrooms on the campus, in the order they're handed out to class names
-  (the ones you can see best from the courtyard first). Each has the point in
-  front of its corridor-side windows and the direction it faces.
-  No 3D code here, so the page can use it too.
+  Rooms on the campus and how people get about the building. No 3D code here, so the
+  page can use it too.
+
+  The school is three blocks: A at the back, wings B (west) and C (east). Each block has
+  its own frame: u runs along the block, v from the outer wall (0) to the courtyard edge
+  (9). Rooms are 7.2 m cells along u, 6.6 m deep; an open corridor (v 6.6 → 9) runs in
+  front of them. Four staircases sit in cells of their own.
 */
 
-const PLINTH = 0.45;
-const FLOOR = 3.6;
-const CD = 6.6; // classroom depth (block depth 9 minus the 2.4 m corridor)
-const floorY = (f) => PLINTH + FLOOR * f;
+export const PLINTH = 0.45;
+export const FLOOR = 3.6;
+export const CD = 6.6; // room depth (block depth 9 minus the 2.4 m corridor)
+export const floorY = (f) => PLINTH + FLOOR * f;
 const FLOOR_NAME = ['Ground floor', 'First floor', 'Second floor'];
+const G = 0.08; // feet on the paving
+const V0 = PLINTH + 0.03; // feet on the ground-floor corridor
+export const FEET = { ground: G, corridor: V0, floor: (f) => floorY(f) + 0.03 };
 
-function room(block, rc, f) {
-  const u = rc + 0.8; // between the two windows
-  let x, z, nx, nz;
-  if (block === 'A') [x, z, nx, nz] = [u, -34 + CD, 0, 1]; // back block, faces the courtyard (+z)
-  else if (block === 'B') [x, z, nx, nz] = [-36 + CD, -8.5 - u, 1, 0]; // left wing, faces +x
-  else [x, z, nx, nz] = [36 - CD, -8.5 + u, -1, 0]; // right wing, faces -x
-  const wing = { A: 'Main block', B: 'West wing', C: 'East wing' }[block];
-  return { block, floor: f, x, y: floorY(f) + 1.57, z, nx, nz, where: `${wing} · ${FLOOR_NAME[f]}` };
+/** block frames: (u, v) → [x, z] */
+export const BLOCKS = {
+  A: { at: (u, v) => [u, -34 + v], theta: 0, half: 36, ox: 0, oz: -34 },
+  B: { at: (u, v) => [-36 + v, -8.5 - u], theta: Math.PI / 2, half: 16.5, ox: -36, oz: -8.5 },
+  C: { at: (u, v) => [36 - v, -8.5 + u], theta: -Math.PI / 2, half: 16.5, ox: 36, oz: -8.5 },
+};
+/** heading (three.js rotation.y) of something facing along +u / +v in a block */
+const headingU = (b) => BLOCKS[b].theta + Math.PI / 2;
+const headingV = (b) => BLOCKS[b].theta;
+
+/** what fills each 7.2 m cell along a block: rooms, stairwells and solid walls */
+export const CELLS = {
+  A: [
+    ['solid', -36, -28.8], ['room', -28.8, -21.6], ['room', -21.6, -14.4], ['room', -14.4, -7.2], ['stair', -7.2, -3.6],
+    ['solid', -3.6, 3.6], ['stair', 3.6, 7.2], ['room', 7.2, 14.4], ['room', 14.4, 21.6], ['room', 21.6, 28.8], ['solid', 28.8, 36],
+  ],
+  B: [['room', -16.5, -9.3], ['room', -9.3, -2.1], ['room', -2.1, 5.1], ['room', 5.1, 12.3], ['stair', 12.3, 16.5]],
+  C: [['room', -16.5, -9.3], ['room', -9.3, -2.1], ['room', -2.1, 5.1], ['room', 5.1, 12.3], ['stair', 12.3, 16.5]],
+};
+
+// ---------------- seats ----------------
+// five rows of two-seater desk-benches in four columns, facing the blackboard (towards -u)
+export const DESK_ROWS = [-1.3, -0.3, 0.7, 1.7, 2.7]; // u of each row, from the room centre
+export const DESK_COLS = [1.125, 2.475, 4.125, 5.475]; // v of each column (girls 0-1, boys 2-3)
+const AISLE_V = 3.3; // the middle aisle
+
+function seatList(block, rc, y, cols) {
+  const at = BLOCKS[block].at;
+  const out = [];
+  for (const r of DESK_ROWS) {
+    // inner seats (next to the aisle) first
+    const vs = [];
+    for (const c of cols) vs.push(c - 0.26, c + 0.26);
+    vs.sort((p, q) => Math.abs(p - AISLE_V) - Math.abs(q - AISLE_V));
+    for (const v of vs) {
+      const [x, z] = at(rc + r + 0.17, v);
+      const [ax, az] = at(rc + r + 0.43, AISLE_V);
+      const [rx, rz] = at(rc + r + 0.43, v);
+      out.push({ x, y, z, heading: headingU(block) + Math.PI, aisle: [ax, az], row: [rx, rz] });
+    }
+  }
+  return out;
 }
 
+function makeRoom(block, rc, f, kind) {
+  const at = BLOCKS[block].at;
+  const y = f === 0 ? V0 : floorY(f) + 0.03;
+  const du = rc - 2.5; // the door is 2.5 m before the room centre along the block
+  const [x, z] = at(rc + 0.8, CD); // between the two corridor windows
+  const nrm = { A: [0, 1], B: [1, 0], C: [-1, 0] }[block];
+  const wing = { A: 'Main block', B: 'West wing', C: 'East wing' }[block];
+  const r = {
+    block, rc, floor: f, kind, x, y: floorY(f) + 1.57, z, nx: nrm[0], nz: nrm[1], where: `${wing} · ${FLOOR_NAME[f]}`,
+    feet: y,
+    door: at(du, CD + 0.5), // just outside the door, in the corridor
+    inDoor: at(du, CD - 0.7), // just inside
+    corr: at(du, 7.8), // corridor centre line
+    front: at(du, 10.6), // out in the courtyard
+    frontAisle: at(rc - 1.95, AISLE_V), // the space in front of the first row
+    hinge: at(du - 0.5, CD - 0.11),
+    theta: BLOCKS[block].theta,
+    teacher: { p: at(rc - 2.8, AISLE_V + 0.4), heading: headingU(block) },
+  };
+  if (kind === 'class') {
+    r.girls = seatList(block, rc, y, [DESK_COLS[0], DESK_COLS[1]]);
+    r.boys = seatList(block, rc, y, [DESK_COLS[2], DESK_COLS[3]]);
+  }
+  return r;
+}
+
+// ---------------- classrooms (in the order class names get them) ----------------
 const PREFERRED = [
   ['A', -10.8, 1], ['A', 10.8, 1], ['A', -18, 0], ['A', 18, 0], ['A', -10.8, 2], ['A', 10.8, 2],
   ['B', 1.5, 1], ['C', 1.5, 1], ['A', -25.2, 1], ['A', 25.2, 1], ['B', -12.9, 0], ['C', -12.9, 0],
   ['A', -18, 2], ['A', 18, 2], ['B', 8.7, 1], ['C', 8.7, 1], ['A', -25.2, 0], ['A', 25.2, 0],
 ];
+export const STAFF_ROOM = ['B', -5.7, 0];
+export const HOD_OFFICE = ['C', -5.7, 1];
+const special = (b, rc, f) => [STAFF_ROOM, HOD_OFFICE].some((s) => s[0] === b && s[1] === rc && s[2] === f);
 
-export const ROOMS = (() => {
-  const list = PREFERRED.map(([b, rc, f]) => room(b, rc, f));
+const ORDER = (() => {
+  const list = PREFERRED.slice();
   const seen = new Set(PREFERRED.map((p) => p.join()));
   for (const [b, rcs] of [['A', [-25.2, -18, -10.8, 10.8, 18, 25.2]], ['B', [-12.9, -5.7, 1.5, 8.7]], ['C', [-12.9, -5.7, 1.5, 8.7]]]) {
     for (const rc of rcs) {
       for (let f = 0; f < 3; f++) {
-        if (b === 'B' && rc === -5.7 && f === 0) continue; // that's the staff room
-        if (!seen.has([b, rc, f].join())) list.push(room(b, rc, f));
+        if (special(b, rc, f)) continue; // the staff room and the HOD's office
+        if (!seen.has([b, rc, f].join())) list.push([b, rc, f]);
       }
     }
   }
   return list;
+})();
+
+/** the 40 classrooms the school day uses (also what the HOD view highlights) */
+export const CLASSROOMS = ORDER.map(([b, rc, f]) => makeRoom(b, rc, f, 'class'));
+export const ROOMS = CLASSROOMS;
+export const STAFF = makeRoom(...STAFF_ROOM, 'staff');
+export const HOD = makeRoom(...HOD_OFFICE, 'hod');
+/** every room with a door (classrooms, staff room, HOD office) */
+export const ALL_ROOMS = [...CLASSROOMS, STAFF, HOD];
+
+// the staff room: a long table with chairs on both sides
+STAFF.table = { u: STAFF.rc + 0.2, v: AISLE_V };
+STAFF.chairs = (() => {
+  const { at } = BLOCKS[STAFF.block];
+  const out = [];
+  for (const side of [-1, 1]) {
+    for (const du of [-1.25, -0.35, 0.55, 1.45]) {
+      const [x, z] = at(STAFF.table.u + du, AISLE_V + side * 0.92);
+      out.push({ x, y: STAFF.feet, z, heading: headingV(STAFF.block) + (side < 0 ? 0 : Math.PI) });
+    }
+  }
+  return out;
+})();
+// the HOD's office: a desk, the HOD's chair behind it, two chairs for visitors
+HOD.chair = (() => {
+  const [x, z] = BLOCKS[HOD.block].at(HOD.rc + 2.05, AISLE_V);
+  return { x, y: HOD.feet, z, heading: headingU(HOD.block) + Math.PI };
+})();
+HOD.visitors = [AISLE_V - 0.55, AISLE_V + 0.55].map((v) => {
+  const [x, z] = BLOCKS[HOD.block].at(HOD.rc + 0.25, v);
+  return { x, y: HOD.feet, z, heading: headingU(HOD.block) };
+});
+
+// ---------------- the library (its own single-storey building, square to the axes) ----------------
+const LX = -64;
+const LZ = -44;
+export const LIBRARY = (() => {
+  const y = 0.53; // feet on the library floor
+  const tables = [[-70.2, -46.2], [-57.8, -46.2], [-70.2, -43.4], [-57.8, -43.4]];
+  const readers = [];
+  for (const [tx, tz] of tables) {
+    for (const side of [-1, 1]) {
+      for (const dx of [-0.8, 0, 0.8]) readers.push({ x: tx + dx, y, z: tz + side * 0.72, heading: side < 0 ? 0 : Math.PI });
+    }
+  }
+  return {
+    x: LX, z: LZ, y, tables, readers,
+    librarian: { x: -60.4, y, z: -42.95, heading: 0 },
+    desk: [-60.4, -42.25],
+    door: [LX, -39.7],
+    inDoor: [LX, -41.4],
+    aisle: (z) => [LX, z],
+  };
 })();
 
 /** the same class always gets the same room: rooms are handed out in sorted class-name order */
@@ -48,59 +171,59 @@ export function roomFor(className, allClasses) {
   return ROOMS[(i >= 0 ? i : sorted.length) % ROOMS.length];
 }
 
-// ---------------- getting around the building ----------------
-// Staircases: where students leave the ground floor (`ground`, in the courtyard),
-// the foot of the stairs inside the corridor (`base`), and the same spot on each floor.
-const G = 0.08; // feet on the paving
-const V0 = PLINTH + 0.03; // feet on a corridor floor
-export const STAIRS = [
-  { id: 'A-west', base: [-5.2, -26.2], ground: [-5.6, -23.4], via: [-9, -9] },
-  { id: 'A-east', base: [5.2, -26.2], ground: [5.6, -23.4], via: [9, -9] },
-  { id: 'NW', base: [-28.2, -26.2], ground: [-25.4, -23.6], via: [-14, -12] },
-  { id: 'NE', base: [28.2, -26.2], ground: [25.4, -23.6], via: [14, -12] },
-  { id: 'W-front', base: [-28.2, 6.6], ground: [-25.4, 6.4], via: [-12, 5] },
-  { id: 'E-front', base: [28.2, 6.6], ground: [25.4, 6.4], via: [12, 5] },
-];
-
-/** classroom doors and the nearest staircase for every room */
-function withDoor(r, rc) {
-  const du = rc - 2.5; // the door is 2.5 m before the room centre along the block
-  const f = r.floor;
-  const y = f === 0 ? V0 : floorY(f) + 0.03;
-  let door, corr, front, stair;
-  if (r.block === 'A') {
-    door = [du, -34 + CD + 0.35];
-    corr = [du, -26.2];
-    front = [du, -23.6];
-    stair = du < 0 ? (du > -16 ? 0 : 2) : du < 16 ? 1 : 3;
-  } else if (r.block === 'B') {
-    door = [-36 + CD + 0.35, -8.5 - du];
-    corr = [-28.2, -8.5 - du];
-    front = [-25.6, -8.5 - du];
-    stair = corr[1] < -10 ? 2 : 4;
-  } else {
-    door = [36 - CD - 0.35, -8.5 + du];
-    corr = [28.2, -8.5 + du];
-    front = [25.6, -8.5 + du];
-    stair = corr[1] < -10 ? 3 : 5;
-  }
-  return { ...r, rc, y, door, corr, front, stair };
+// ---------------- staircases ----------------
+// a dog-leg stair in its own cell: flight A climbs from the corridor towards the outer wall,
+// a landing, then flight B climbs back to the next floor's landing at the corridor
+function stairOf(id, block, u0, u1) {
+  const at = BLOCKS[block].at;
+  const um = (u0 + u1) / 2;
+  const uA = (u0 + um) / 2 - 0.05;
+  const uB = (um + u1) / 2 + 0.05;
+  const p = (u, v, y) => {
+    const [x, z] = at(u, v);
+    return [x, y, z];
+  };
+  /** the walk from floor f up to floor f + 1 */
+  const up = (f) => {
+    const y0 = f === 0 ? V0 : floorY(f) + 0.03;
+    const y1 = floorY(f + 1) + 0.03;
+    const ym = floorY(f) + FLOOR / 2 + 0.03;
+    return [p(uA, 5.7, y0), p(uA, 5.0, y0), p(uA, 1.65, ym), p(uA, 0.95, ym), p(uB, 0.95, ym), p(uB, 1.65, ym), p(uB, 5.0, y1), p(uB, 5.7, y1)];
+  };
+  const corr = at(um, 7.8);
+  return { id, block, u0, u1, um, uA, uB, corr, ground: at(um, 10.6), up };
 }
 
-// rooms in the same order as ROOMS (so a class keeps its room), with doors added
-const RC = (() => {
-  const out = [];
-  for (const [b, rc, f] of PREFERRED) out.push([b, rc, f]);
-  const seen = new Set(PREFERRED.map((p) => p.join()));
-  for (const [b, rcs] of [['A', [-25.2, -18, -10.8, 10.8, 18, 25.2]], ['B', [-12.9, -5.7, 1.5, 8.7]], ['C', [-12.9, -5.7, 1.5, 8.7]]]) {
-    for (const rc of rcs) for (let f = 0; f < 3; f++) {
-      if (b === 'B' && rc === -5.7 && f === 0) continue;
-      if (!seen.has([b, rc, f].join())) out.push([b, rc, f]);
-    }
-  }
-  return out;
-})();
+export const STAIRS = [
+  stairOf('A-west', 'A', -7.2, -3.6),
+  stairOf('A-east', 'A', 3.6, 7.2),
+  stairOf('B-back', 'B', 12.3, 16.5),
+  stairOf('C-front', 'C', 12.3, 16.5),
+];
 
-/** the 40 classrooms the school day uses */
-export const CLASSROOMS = ROOMS.slice(0, 40).map((r, i) => withDoor(r, RC[i][1]));
-export const FEET = { ground: G, corridor: V0, floor: (f) => (f === 0 ? V0 : floorY(f) + 0.03) };
+/** the staircase nearest a room (by walking distance along the corridors) */
+const corridorDist = (r, s) => {
+  const [dx, dz] = r.corr;
+  const [sx, sz] = s.corr;
+  return Math.abs(dx - sx) + Math.abs(dz - sz);
+};
+for (const r of ALL_ROOMS) {
+  let best = 0;
+  for (let i = 1; i < STAIRS.length; i++) if (corridorDist(r, STAIRS[i]) < corridorDist(r, STAIRS[best])) best = i;
+  r.stair = best;
+}
+
+/**
+ * Corridor route from one point to another on the same floor (feet height y): along the
+ * corridor centre lines, turning at the corner where a wing meets the main block.
+ */
+export function corridorPath([x0, z0], [x1, z1], y) {
+  const pts = [];
+  const inA = (z) => z < -24.9;
+  const wingX = (x) => (x < 0 ? -28.2 : 28.2);
+  if (inA(z0) && !inA(z1)) pts.push([wingX(x1), -26.2]);
+  else if (!inA(z0) && inA(z1)) pts.push([wingX(x0), -26.2]);
+  else if (!inA(z0) && !inA(z1) && Math.sign(x0) !== Math.sign(x1)) pts.push([wingX(x0), -26.2], [wingX(x1), -26.2]);
+  pts.push([x1, z1]);
+  return pts.map(([x, z]) => [x, y, z]);
+}

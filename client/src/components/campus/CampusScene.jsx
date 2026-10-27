@@ -5,7 +5,7 @@ import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 're
  * and a photo of the same campus shows until the live scene is ready.
  * The school day runs on its own; onClock reports the campus time and part of the day.
  */
-const CampusScene = forwardRef(function CampusScene({ time = 'morning', startMinutes, className = '', onProgress, onClock, onBell, onReady, frameShift }, ref) {
+const CampusScene = forwardRef(function CampusScene({ time = 'morning', startMinutes, className = '', onProgress, onClock, onBell, onReady, frameShift, quality = 'auto' }, ref) {
   const mount = useRef(null);
   const api = useRef(null);
   const [ready, setReady] = useState(false);
@@ -22,6 +22,7 @@ const CampusScene = forwardRef(function CampusScene({ time = 'morning', startMin
         mode: 'hero',
         time,
         startMinutes,
+        quality,
         onProgress: (p) => cb.current.onProgress?.(p),
         onClock: (m, phase) => cb.current.onClock?.(m, phase),
         onBell: (name) => cb.current.onBell?.(name),
@@ -50,6 +51,8 @@ const CampusScene = forwardRef(function CampusScene({ time = 'morning', startMin
     goTo: (i) => api.current?.goTo(i),
     endTour: () => api.current?.endTour(),
     jumpTo: (m) => api.current?.jumpTo(m),
+    lookInside: (name) => api.current?.lookInside(name),
+    overview: () => api.current?.overview(),
     get fps() {
       return api.current?.fps;
     },

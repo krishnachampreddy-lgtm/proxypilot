@@ -16,11 +16,11 @@ if (stillTime) {
   // &at=7:40 sets the school clock, &adv=20 lets the day run that many seconds first
   const at = q.get('at')?.split(':').map(Number);
   window.__campusDebug = true;
-  import('./campus/index.js').then(async ({ createCampus, STOPS, SHOTS, prepared }) => {
+  import('./campus/index.js').then(async ({ createCampus, STOPS, SHOTS, shotView, prepared }) => {
     await prepared.catch(() => {});
-    // &shot=arrival.1 frames one of the director's shots
+    // &shot=arrival.1 frames one of the director's shots (&shot=inside.staff looks into a room)
     const shot = q.get('shot')?.split('.');
-    const view = stop !== null ? STOPS[+stop] : shot ? { cam: SHOTS[shot[0]][+shot[1] || 0][0], target: SHOTS[shot[0]][+shot[1] || 0][1] } : undefined;
+    const view = stop !== null ? STOPS[+stop] : shot ? shotView(shot[0], shot[1]) : undefined;
     const startMinutes = at ? at[0] * 60 + (at[1] || 0) : view?.clock;
     const api = createCampus(el, { mode: 'still', time: stillTime, view, startMinutes });
     api.ready.then(() => {
@@ -28,6 +28,7 @@ if (stillTime) {
       api.renderStill();
       window.__campusApi = api;
       window.__campusShots = SHOTS;
+      window.__shotView = shotView;
       window.__stillReady = true;
     });
   });

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { signTexture, canvasTexture } from './util.js';
+import { CELLS } from './rooms.js';
 
 /*
   The main school: a U-shaped, three-storey block around an assembly courtyard.
@@ -19,7 +20,7 @@ const CW = 2.4; // corridor width
 const CD = D - CW; // classroom depth
 
 /** Places pieces in a block's own frame: u along the block, v from the outer wall (0) to the courtyard (D). */
-function frame(B, ox, oz, theta) {
+export function frame(B, ox, oz, theta) {
   const c = Math.cos(theta);
   const s = Math.sin(theta);
   const at = (u, v) => [ox + u * c + v * s, oz - u * s + v * c];
@@ -67,14 +68,6 @@ function windowUnit(F, u, y, v, w, h, out, { chajja = false, grill = true, glass
   }
 }
 
-function door(F, u, y, v, out, key = 'wood') {
-  const o = out;
-  F.box(1.26, 2.28, 0.08, 'white', u, y, v + o * 0.04);
-  F.box(1.02, 2.12, 0.06, key, u, y, v + o * 0.08);
-  F.box(0.88, 0.04, 0.02, 'darkMetal', u, y + 1.05, v + o * 0.115); // door panel line
-  F.box(0.04, 0.16, 0.04, 'steel', u + 0.38, y + 0.98, v + o * 0.13); // handle
-}
-
 /** Railing pipe running along a parapet. */
 function rail(F, u0, u1, y, v) {
   const len = Math.abs(u1 - u0);
@@ -83,30 +76,123 @@ function rail(F, u0, u1, y, v) {
 }
 
 /**
- * One classroom block.
- * L: length; u0/u1: where the open corridor (columns + parapet) runs;
- * story: classroom index whose windows tell the product story.
+ * One block of the school, built hollow: real rooms behind real window and door openings,
+ * partition walls, floor slabs and ceilings, and dog-leg staircases in cells of their own.
+ * name: 'A' | 'B' | 'C' (see rooms.js for the cells along each block).
  */
-function block(B, opts, rng, lit) {
+function block(B, name, opts, rng, lit) {
   const { L, ox, oz, theta, corridorFrom = -L / 2, corridorTo = L / 2, endWalls = [true, true] } = opts;
   const F = frame(B, ox, oz, theta);
   const half = L / 2;
+  const cells = CELLS[name];
+  const top = (f) => (f < 2 ? FL[f + 1] : ROOFY);
+  // a box between two corners in the block frame
+  const wb = (u0, u1, v0, v1, y0, y1, key) => {
+    if (u1 - u0 < 0.005 || v1 - v0 < 0.005 || y1 - y0 < 0.005) return;
+    F.box(u1 - u0, y1 - y0, v1 - v0, key, (u0 + u1) / 2, y0, (v0 + v1) / 2);
+  };
+  const T = 0.22; // wall thickness
+  const hollowAt = (u) => cells.some(([t, a, b]) => t !== 'solid' && u > a && u < b);
 
-  // plinth and classroom mass
   F.box(L + 0.3, PLINTH, D + 0.3, 'plinth', 0, 0, D / 2);
-  F.box(L, ROOFY - PLINTH, CD, 'wall', 0, PLINTH, CD / 2);
 
-  // outer facade: maroon bands at every floor, windows with sunshades
-  for (let i = 1; i < 3; i++) F.box(L + 0.06, 0.32, 0.06, 'maroon', 0, FL[i] - 0.3, -0.03);
+  // ---- solid parts (behind the clock tower, the corners) ----
+  for (const [t, a, b] of cells) if (t === 'solid') wb(a, b, 0, CD, PLINTH, ROOFY, 'wall');
+
+  // ---- outer wall with window openings, and the windows themselves ----
+  const winU = [];
+  for (let u = -half + 1.8; u < half - 0.5; u += 3.6) winU.push(u);
+  const runs = [];
+  for (const [t, a, b] of cells) {
+    if (t === 'solid') continue;
+    const last = runs[runs.length - 1];
+    if (last && Math.abs(last[1] - a) < 0.01) last[1] = b;
+    else runs.push([a, b]);
+  }
+  for (let f = 0; f < 3; f++) {
+    const y0 = FL[f];
+    for (const [a, b] of runs) {
+      wb(a, b, 0, T, y0, y0 + 0.9, 'wall');
+      wb(a, b, 0, T, y0 + 2.4, top(f), 'wall');
+      let from = a;
+      for (const u of winU) {
+        if (u - 1 < a - 0.01 || u + 1 > b + 0.01) continue;
+        wb(from, u - 1, 0, T, y0 + 0.9, y0 + 2.4, 'wall');
+        from = u + 1;
+      }
+      wb(from, b, 0, T, y0 + 0.9, y0 + 2.4, 'wall');
+    }
+  }
+  for (const i of [1, 2]) F.box(L + 0.06, 0.32, 0.06, 'maroon', 0, FL[i] - 0.3, -0.03);
   F.box(L + 0.06, 0.5, 0.06, 'maroon', 0, ROOFY - 0.1, -0.03);
   for (let u = -half + 3.6; u <= half - 3.6 + 0.01; u += 7.2) F.box(0.4, ROOFY - PLINTH, 0.12, 'wallShade', u, PLINTH, -0.06); // pilasters
   for (let f = 0; f < 3; f++) {
-    for (let u = -half + 1.8; u < half - 0.5; u += 3.6) {
-      windowUnit(F, u, FL[f] + 0.9, 0, 2.0, 1.5, -1, { chajja: true, glass: lit(f) ? 'glassLit' : 'glass' });
+    for (const u of winU) {
+      const open = hollowAt(u);
+      windowUnit(F, u, FL[f] + 0.9, 0, 2.0, 1.5, -1, { chajja: true, glass: open ? (lit(f) ? 'glassClearLit' : 'glassClear') : lit(f) ? 'glassLit' : 'glass' });
     }
   }
 
-  // open corridor facing the courtyard
+  // ---- rooms and stairwells: partitions, slabs, floors, the corridor wall ----
+  for (let ci = 0; ci < cells.length; ci++) {
+    const [t, u0, u1] = cells[ci];
+    if (t === 'solid') continue;
+    const prev = cells[ci - 1];
+    const next = cells[ci + 1];
+    // partition / end walls (one tall wall through all three floors)
+    if (!prev) {
+      wb(u0, u0 + T, 0, CD, PLINTH, ROOFY, 'wall');
+    } else if (prev[0] !== 'solid') wb(u0 - 0.1, u0 + 0.1, T, CD - T, PLINTH, ROOFY, 'wall');
+    if (!next) wb(u1 - T, u1, 0, CD, PLINTH, ROOFY, 'wall');
+    // slabs, floors and ceilings
+    for (let f = 0; f < 3; f++) {
+      if (f > 0) wb(u0, u1, t === 'stair' ? 5.0 : 0, CD, FL[f] - 0.2, FL[f], 'white');
+      if (t === 'room' || f === 0) wb(u0 + 0.1, u1 - 0.1, T, CD - T, FL[f], FL[f] + 0.025, 'floorIn');
+      else wb(u0 + 0.1, u1 - 0.1, 5.0, CD - T, FL[f], FL[f] + 0.025, 'kota');
+    }
+    wb(u0, u1, 0, CD, ROOFY - 0.2, ROOFY, 'white');
+    if (t === 'stair') {
+      stairwell(F, u0, u1, wb);
+      for (let f = 0; f < 3; f++) wb(u0, u1, CD - T, CD, FL[f] + 2.7, top(f), 'wall');
+      continue;
+    }
+    // the corridor wall of a room: a door and two windows on every floor
+    const rc = (u0 + u1) / 2;
+    const du = rc - 2.5;
+    const dA = du - 0.51;
+    const dB = du + 0.51;
+    const w1 = [rc - 1.2, rc + 0.4];
+    const w2 = [rc + 1.2, rc + 2.8];
+    for (let f = 0; f < 3; f++) {
+      const y = FL[f];
+      const v0 = CD - T;
+      wb(u0, dA, v0, CD, y, y + 0.95, 'wall');
+      wb(dB, u1, v0, CD, y, y + 0.95, 'wall');
+      for (const [a, b] of [[u0, dA], [dB, w1[0]], [w1[1], w2[0]], [w2[1], u1]]) wb(a, b, v0, CD, y + 0.95, y + 2.12, 'wall');
+      for (const [a, b] of [[u0, w1[0]], [w1[1], w2[0]], [w2[1], u1]]) wb(a, b, v0, CD, y + 2.12, y + 2.2, 'wall');
+      wb(u0, u1, v0, CD, y + 2.2, top(f), 'wall');
+      doorFrame(F, du, y, CD);
+      const isStory = opts.story && opts.story.u === rc && opts.story.floor === f;
+      const g = isStory ? 'glassStory' : lit(f) ? 'glassClearLit' : 'glassClear';
+      windowUnit(F, rc - 0.4, y + 0.95, CD, 1.6, 1.25, 1, { glass: g, grill: true });
+      windowUnit(F, rc + 2.0, y + 0.95, CD, 1.6, 1.25, 1, { glass: g, grill: true });
+      F.box(0.7, 0.22, 0.03, 'board', du, y + 2.42, CD + 0.03); // class name plate above the door
+    }
+  }
+
+  // end walls with windows (into the end room or stairwell)
+  [-1, 1].forEach((side, i) => {
+    const u = side * half;
+    if (endWalls[i] && hollowAt(u - side * 1)) {
+      for (let f = 0; f < 3; f++) {
+        F.add(new THREE.BoxGeometry(0.02, 1.5, 1.8), lit(f) ? 'glassClearLit' : 'glassClear', u + side * 0.01, FL[f] + 0.9 + 0.75, CD / 2);
+        F.add(new THREE.BoxGeometry(0.62, 0.09, 2.4), 'white', u + side * 0.31, FL[f] + 2.58, CD / 2);
+      }
+    }
+    if (endWalls[i]) for (let f = 1; f < 3; f++) F.box(0.16, 0.92, CW, 'wall', u - side * 0.08, FL[f], CD + CW / 2); // corridor end parapet
+  });
+
+  // ---- open corridor facing the courtyard ----
   const cu0 = Math.max(-half, corridorFrom);
   const cu1 = Math.min(half, corridorTo);
   const clen = cu1 - cu0;
@@ -126,40 +212,15 @@ function block(B, opts, rng, lit) {
     F.box(clen + 0.06, 0.09, 0.28, 'maroon', cmid, FL[f] + 0.92, D - 0.08);
     rail(F, cu0 + 0.3, cu1 - 0.3, FL[f] + 1.24, D - 0.08);
   }
-  // potted plants along the ground-floor verandah
+  // potted plants along the ground-floor verandah (never in front of a door or a staircase)
   for (let u = cu0 + 1.9; u < cu1 - 1; u += 3.6) {
     if (!rng.chance(0.6)) continue;
+    const cell = cells.find(([, a, b]) => u > a && u < b);
+    if (cell?.[0] === 'stair') continue;
+    if (cell?.[0] === 'room' && Math.abs(u - ((cell[1] + cell[2]) / 2 - 2.5)) < 1.4) continue;
     F.add(new THREE.CylinderGeometry(0.22, 0.16, 0.38, 12), 'pot', u, PLINTH + 0.19, D - 0.45);
     F.add(new THREE.SphereGeometry(0.32, 10, 8), 'shrub', u, PLINTH + 0.62, D - 0.45, { sy: 0.85 });
   }
-
-  // classroom side of the corridor: a door and two windows per classroom on every floor
-  const rooms = [];
-  for (let u = -half + 3.6; u <= half - 3.6 + 0.01; u += 7.2) rooms.push(u);
-  rooms.forEach((rc, ri) => {
-    if (rc < cu0 - 1 || rc > cu1 + 1) return;
-    if (opts.skipRooms?.(rc)) return;
-    for (let f = 0; f < 3; f++) {
-      door(F, rc - 2.5, FL[f], CD, 1);
-      const isStory = opts.story && opts.story.room === ri && opts.story.floor === f;
-      const g = isStory ? 'glassStory' : lit(f) ? 'glassLit' : 'glass';
-      windowUnit(F, rc - 0.4, FL[f] + 0.95, CD, 1.6, 1.25, 1, { glass: g, grill: true });
-      windowUnit(F, rc + 2.0, FL[f] + 0.95, CD, 1.6, 1.25, 1, { glass: g, grill: true });
-      // class name plate above the door
-      F.box(0.7, 0.22, 0.03, 'board', rc - 2.5, FL[f] + 2.42, CD + 0.03);
-    }
-  });
-
-  // end walls with windows
-  [-1, 1].forEach((side, i) => {
-    if (!endWalls[i]) return;
-    const u = side * half;
-    for (let f = 0; f < 3; f++) {
-      F.add(new THREE.BoxGeometry(0.02, 1.5, 1.8), lit(f) ? 'glassLit' : 'glass', u + side * 0.01, FL[f] + 0.9 + 0.75, CD / 2);
-      F.add(new THREE.BoxGeometry(0.62, 0.09, 2.4), 'white', u + side * 0.31, FL[f] + 2.58, CD / 2);
-    }
-    for (let f = 1; f < 3; f++) F.box(0.16, 0.92, CW, 'wall', u - side * 0.08, FL[f], CD + CW / 2); // corridor end parapet
-  });
 
   // terrace: finish, parapet with coping, tanks
   F.box(L - 0.3, 0.06, D - 0.3, 'roof', 0, ROOFY, D / 2);
@@ -172,6 +233,42 @@ function block(B, opts, rng, lit) {
   F.box(0.34, 0.1, D, 'maroon', -half, ROOFY + 1.0, D / 2);
   F.box(0.34, 0.1, D, 'maroon', half, ROOFY + 1.0, D / 2);
   return F;
+}
+
+/** a dog-leg staircase between u0 and u1: flight A climbs towards the outer wall, flight B comes back */
+function stairwell(F, u0, u1, wb) {
+  const um = (u0 + u1) / 2;
+  const RISERS = 12;
+  const rise = FLOOR / 2 / RISERS;
+  const run = (5.0 - 1.65) / RISERS;
+  const slope = Math.atan2(FLOOR / 2, 5.0 - 1.65);
+  const len = Math.hypot(FLOOR / 2, 5.0 - 1.65);
+  for (let f = 0; f < 2; f++) {
+    const y0 = FL[f];
+    const ym = y0 + FLOOR / 2;
+    for (let k = 0; k < RISERS; k++) {
+      // flight A: up as v decreases
+      wb(u0 + 0.12, um - 0.08, 5.0 - (k + 1) * run, 5.0 - k * run, y0 + k * rise, y0 + (k + 1) * rise, 'kota');
+      // flight B: up as v increases
+      wb(um + 0.08, u1 - 0.12, 1.65 + k * run, 1.65 + (k + 1) * run, ym + k * rise, ym + (k + 1) * rise, 'kota');
+    }
+    // sloping slabs under the flights and the low walls between them
+    F.add(new THREE.BoxGeometry(um - 0.08 - u0 - 0.12, 0.16, len), 'white', (u0 + 0.12 + um - 0.08) / 2, (y0 + ym) / 2 - 0.12, 3.325, { rx: slope });
+    F.add(new THREE.BoxGeometry(u1 - 0.12 - um - 0.08, 0.16, len), 'white', (um + 0.08 + u1 - 0.12) / 2, (ym + y0 + FLOOR) / 2 - 0.12, 3.325, { rx: -slope });
+    F.add(new THREE.BoxGeometry(0.1, 0.95, len), 'white', um - 0.05, (y0 + ym) / 2 + 0.47, 3.325, { rx: slope });
+    F.add(new THREE.BoxGeometry(0.1, 0.95, len), 'white', um + 0.05, (ym + y0 + FLOOR) / 2 + 0.47, 3.325, { rx: -slope });
+    F.add(new THREE.BoxGeometry(0.14, 0.05, len), 'wood', um - 0.05, (y0 + ym) / 2 + 0.97, 3.325, { rx: slope }); // hand rails
+    F.add(new THREE.BoxGeometry(0.14, 0.05, len), 'wood', um + 0.05, (ym + y0 + FLOOR) / 2 + 0.97, 3.325, { rx: -slope });
+    // the half-way landing
+    wb(u0 + 0.1, u1 - 0.1, 0.22, 1.65, ym - 0.18, ym, 'kota');
+  }
+}
+
+/** door frame (the door leaf itself is a separate moving part, see doors.js) */
+function doorFrame(F, u, y, v) {
+  F.box(0.12, 2.24, 0.26, 'white', u - 0.57, y, v - 0.11);
+  F.box(0.12, 2.24, 0.26, 'white', u + 0.57, y, v - 0.11);
+  F.box(1.26, 0.12, 0.26, 'white', u, y + 2.12, v - 0.11);
 }
 
 /** Black ribbed water tank on a small stand (every Indian terrace has a few). */
@@ -187,10 +284,10 @@ export function buildSchool(scene, B, M, rng) {
   const lit = (f) => rng.chance(f === 0 ? 0.75 : f === 1 ? 0.6 : 0.45);
 
   // block A (back) — the story classroom is on the 2nd floor, right of the clock tower
-  block(B, { L: 72, ox: 0, oz: -34, theta: 0, corridorFrom: -29.4, corridorTo: 29.4, story: { room: 6, floor: 2 }, skipRooms: (u) => Math.abs(u) < 5 }, rng, lit);
+  block(B, 'A', { L: 72, ox: 0, oz: -34, theta: 0, corridorFrom: -29.4, corridorTo: 29.4, story: { u: 10.8, floor: 2 } }, rng, lit);
   // wings B (left) and C (right), corridors facing the courtyard
-  block(B, { L: 33, ox: -36, oz: -8.5, theta: Math.PI / 2, endWalls: [true, false] }, rng, lit);
-  block(B, { L: 33, ox: 36, oz: -8.5, theta: -Math.PI / 2, endWalls: [false, true] }, rng, lit);
+  block(B, 'B', { L: 33, ox: -36, oz: -8.5, theta: Math.PI / 2, endWalls: [true, false] }, rng, lit);
+  block(B, 'C', { L: 33, ox: 36, oz: -8.5, theta: -Math.PI / 2, endWalls: [false, true] }, rng, lit);
 
   // stair rooms ("mumty") and tanks on the terrace
   for (const x of [-31.5, 31.5]) {

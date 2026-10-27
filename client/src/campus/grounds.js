@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { canvasTexture, signTexture } from './util.js';
 import { Batch } from './batch.js';
+import { furnishLibrary } from './interiors.js';
 
 /* Ground, lawns, paths, sports areas, compound wall, gate, road, poles and the library. */
 
@@ -209,6 +210,7 @@ export function buildGrounds(scene, B, M, L, rng, P) {
   // ---- paved areas ----
   B.box(54, 0.08, 33, 'pavers', 0, 0, -8.5); // assembly courtyard
   B.box(9, 0.08, 23, 'pavers', 0, 0, 20.5); // main drive to the porch
+  B.box(9, 0.08, 12.4, 'pavers', 0, 0, 38.1); // ... and on to the gate (everyone walks in this way)
   B.box(5, 0.08, 4, 'pavers', 0, 0, 7); // porch apron
   B.box(44, 0.06, 20.4, 'asphalt', 28, 0, 31.2); // bus bay: four drive-through bays and an entry lane along the wall
   B.box(10.5, 0.065, 15, 'asphalt', 9.75, 0, 34.5); // driveway from the gate into the bus bay
@@ -386,23 +388,52 @@ export function buildGrounds(scene, B, M, L, rng, P) {
     B.box(0.5, 0.04, 0.24, 'lampOff', x, 4.36, z);
   }
 
-  // ---- library: single storey with a verandah and a Mangalore-tile hip roof ----
+  // ---- library: single storey with a verandah and a Mangalore-tile hip roof; open inside ----
   const LX = -64, LZ = -44;
   B.box(22.4, 0.5, 14.4, 'plinth', LX, 0, LZ);
-  B.box(22, 4.4, 10, 'wall', LX, 0.5, LZ - 1.5);
+  const lw = (x0, x1, z0, z1, y0, y1, key = 'wall') => B.box(x1 - x0, y1 - y0, z1 - z0, key, (x0 + x1) / 2, y0, (z0 + z1) / 2);
+  const X0 = LX - 11, X1 = LX + 11, Z0 = LZ - 6.5, Z1 = LZ + 3.5, T = 0.25;
+  lw(X0, X1, Z0, Z0 + T, 0.5, 4.9); // back
+  lw(X0, X0 + T, Z0, Z1, 0.5, 4.9); // sides
+  lw(X1 - T, X1, Z0, Z1, 0.5, 4.9);
+  // front wall: a doorway in the middle and four windows
+  const wins = [-8, -4, 4, 8].map((x) => [LX + x - 0.9, LX + x + 0.9]);
+  const door = [LX - 0.7, LX + 0.7];
+  lw(X0, door[0], Z1 - T, Z1, 0.5, 1.6);
+  lw(door[1], X1, Z1 - T, Z1, 0.5, 1.6);
+  const cuts = [...wins, door].sort((a, b) => a[0] - b[0]);
+  let from = X0;
+  for (const [a, b] of cuts) {
+    lw(from, a, Z1 - T, Z1, 1.6, 2.8);
+    from = b;
+  }
+  lw(from, X1, Z1 - T, Z1, 1.6, 2.8);
+  from = X0;
+  for (const [a, b] of wins) {
+    lw(from, a, Z1 - T, Z1, 2.8, 3.1);
+    from = b;
+  }
+  lw(from, X1, Z1 - T, Z1, 2.8, 3.1);
+  lw(X0, X1, Z1 - T, Z1, 3.1, 4.9);
+  B.box(21.5, 0.03, 9.5, 'floorIn', LX, 0.5, LZ - 1.5);
   B.box(22.1, 0.3, 10.1, 'maroon', LX, 4.6, LZ - 1.5);
+  B.box(21.5, 0.04, 9.5, 'white', LX, 4.56, LZ - 1.5); // ceiling
   for (let x = -9; x <= 9; x += 3.6) B.cyl(0.18, 4.1, 'white', LX + x, 0.5, LZ + 6.6, 14);
   B.add(hipRoof(24.5, 16, 4.2), 'rooftiles', LX, 4.9, LZ);
   B.box(24.2, 0.25, 15.7, 'wood', LX, 4.65, LZ); // eaves board
-  for (let x = -8; x <= 8; x += 4) {
-    if (Math.abs(x) < 1) {
-      B.box(1.4, 2.3, 0.08, 'wood', LX, 0.5, LZ + 3.54);
-      continue;
-    }
-    B.box(1.8, 1.5, 0.04, 'glassLit', LX + x, 1.6, LZ + 3.52);
-    B.box(2.1, 0.1, 0.2, 'white', LX + x, 1.5, LZ + 3.6);
-    for (let b = 1; b < 12; b++) B.box(0.016, 1.45, 0.016, 'green', LX + x - 0.9 + b * 0.15, 1.62, LZ + 3.6);
+  // door frame and the two leaves, open inwards
+  B.box(0.12, 2.42, 0.3, 'white', LX - 0.76, 0.5, Z1 - 0.12);
+  B.box(0.12, 2.42, 0.3, 'white', LX + 0.76, 0.5, Z1 - 0.12);
+  B.box(1.64, 0.12, 0.3, 'white', LX, 2.8, Z1 - 0.12);
+  B.box(0.05, 2.28, 0.7, 'wood', LX - 0.68, 0.52, Z1 - 0.62);
+  B.box(0.05, 2.28, 0.7, 'wood', LX + 0.68, 0.52, Z1 - 0.62);
+  for (const [a, b] of wins) {
+    const x = (a + b) / 2;
+    B.box(1.8, 1.5, 0.04, 'glassClearLit', x, 1.6, LZ + 3.52);
+    B.box(2.1, 0.1, 0.2, 'white', x, 1.5, LZ + 3.6);
+    for (let k = 1; k < 12; k++) B.box(0.016, 1.45, 0.016, 'green', x - 0.9 + k * 0.15, 1.62, LZ + 3.6);
   }
+  const libraryFans = furnishLibrary(B);
   const libSign = new THREE.Mesh(new THREE.PlaneGeometry(4.6, 0.62), new THREE.MeshStandardMaterial({ map: signTexture('LIBRARY', { w: 1024, h: 138, font: '700 92px Georgia, serif' }), roughness: 0.5 }));
   libSign.position.set(LX, 4.0, LZ + 3.56);
   scene.add(libSign);
@@ -453,6 +484,7 @@ export function buildGrounds(scene, B, M, L, rng, P) {
     ground,
     grass,
     lamps,
+    libraryFans,
     /** 0 = closed, 1 = open */
     setGate(open) {
       for (const { g, side } of gate) g.position.x = side * (0.02 + open * 7.6);

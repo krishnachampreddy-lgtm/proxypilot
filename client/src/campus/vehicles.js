@@ -45,29 +45,31 @@ function wheels(parts, xs, zs, r = 0.45, w = 0.32) {
   }
 }
 
-function busTemplate() {
-  const yellow = paint('#f2a90c');
+/** the school's yellow bus, or (city: true) a red-and-cream city bus for the road traffic */
+function busTemplate({ city = false } = {}) {
+  const body = city ? '#e9e4d6' : '#f2a90c';
+  const yellow = paint(body);
   const sideText = canvasTexture(1024, 96, (g) => {
-    g.fillStyle = '#f2a90c';
+    g.fillStyle = city ? '#b3261e' : '#f2a90c';
     g.fillRect(0, 0, 1024, 96);
-    g.fillStyle = '#6b1e14';
+    g.fillStyle = city ? '#f5f1e6' : '#6b1e14';
     g.font = '700 60px Arial, sans-serif';
     g.textAlign = 'center';
     g.textBaseline = 'middle';
-    g.fillText('PROXYPILOT SCHOOL', 512, 50);
+    g.fillText(city ? 'CITY EXPRESS' : 'PROXYPILOT SCHOOL', 512, 50);
   });
   const signTex = canvasTexture(512, 96, (g) => {
-    g.fillStyle = '#f2a90c';
+    g.fillStyle = city ? '#151515' : '#f2a90c';
     g.fillRect(0, 0, 512, 96);
-    g.fillStyle = '#111';
+    g.fillStyle = city ? '#ff9a1f' : '#111';
     g.font = '800 64px Arial, sans-serif';
     g.textAlign = 'center';
     g.textBaseline = 'middle';
-    g.fillText('SCHOOL BUS', 256, 52);
+    g.fillText(city ? '47  CENTRAL' : 'SCHOOL BUS', 256, 52);
   });
   const side = new THREE.MeshStandardMaterial({ map: sideText, roughness: 0.4 });
   const sign = new THREE.MeshStandardMaterial({ map: signTex, roughness: 0.4 });
-  const stripe = paint('#6b1e14');
+  const stripe = paint(city ? '#b3261e' : '#6b1e14');
   const parts = [
     [new RoundedBoxGeometry(2.45, 2.6, 9.6, 4, 0.14), yellow, 0, 0.55 + 1.3, 0],
     [new THREE.BoxGeometry(2.47, 0.95, 8.0), GLASS, 0, 2.3, -0.5],
@@ -195,6 +197,7 @@ export class Driver {
 
 export function buildVehicles(scene, rng, P) {
   const bus = busTemplate();
+  const cityBus = busTemplate({ city: true });
   const cars = ['#f4f4f2', '#b8bcc0', '#a3201b', '#3b4249', '#1f4f8b', '#e9e6dc'].map(carTemplate);
   const auto = autoTemplate();
   const group = new THREE.Group();
@@ -220,11 +223,12 @@ export function buildVehicles(scene, rng, P) {
   const lane = (dir) => (dir > 0 ? 49.5 : 56.5);
   for (let i = 0; i < P.traffic; i++) {
     const dir = i % 2 ? 1 : -1;
-    const kind = i % 7 === 0 ? bus : i % 3 === 0 ? auto : cars[i % cars.length];
+    // road traffic: cars, autos and red city buses (never a yellow school bus)
+    const kind = i % 7 === 0 ? cityBus : i % 3 === 0 ? auto : cars[i % cars.length];
     const v = kind.clone();
     v.rotation.y = dir > 0 ? Math.PI / 2 : -Math.PI / 2;
     group.add(v);
-    traffic.push({ obj: v, dir, x: rng() * 600 - 300, speed: kind === bus ? 7 : kind === auto ? 8 : 9 + rng() * 5, v: 0, z: lane(dir), dims: kind === bus ? DIMS.bus : kind === auto ? DIMS.auto : DIMS.car });
+    traffic.push({ obj: v, dir, x: rng() * 600 - 300, speed: kind === cityBus ? 7 : kind === auto ? 8 : 9 + rng() * 5, v: 0, z: lane(dir), dims: kind === cityBus ? DIMS.bus : kind === auto ? DIMS.auto : DIMS.car });
   }
 
   // ---- keeping vehicles apart ----
@@ -238,26 +242,99 @@ export function buildVehicles(scene, rng, P) {
     const c = Math.abs(Math.sin(r) * fx + Math.cos(r) * fz);
     return (o.dims.len / 2) * c + (o.dims.wid / 2) * Math.sqrt(Math.max(0, 1 - c * c));
   };
+  // separating-axis test between two rectangles on the ground: centre, unit forward, half length, half width
+  const corners = (cx, cz, fx, fz, hl, hw, out) => {
+    const sx = fz;
+    const sz = -fx;
+    let k = 0;
+    for (const i of [-1, 1]) for (const j of [-1, 1]) {
+      out[k++] = cx + fx * hl * i + sx * hw * j;
+      out[k++] = cz + fz * hl * i + sz * hw * j;
+    }
+  };
+  const A = new Float64Array(8);
+  const Bc = new Float64Array(8);
+  const sepOn = (ax, az) => {
+    let a0 = Infinity, a1 = -Infinity, b0 = Infinity, b1 = -Infinity;
+    for (let k = 0; k < 8; k += 2) {
+      const pa = A[k] * ax + A[k + 1] * az;
+      const pb = Bc[k] * ax + Bc[k + 1] * az;
+      if (pa < a0) a0 = pa;
+      if (pa > a1) a1 = pa;
+      if (pb < b0) b0 = pb;
+      if (pb > b1) b1 = pb;
+    }
+    return a1 < b0 || b1 < a0;
+  };
+  const boxesTouch = (afx, afz, bfx, bfz) => !(sepOn(afx, afz) || sepOn(afz, -afx) || sepOn(bfx, bfz) || sepOn(bfz, -bfx));
+  /** the vehicle in d's way: anything that the strip it is about to drive over would touch */
   const blocker = (d) => {
     const r = d.obj.rotation.y + (d.reverse ? Math.PI : 0); // look where it's going
     const fx = Math.sin(r);
     const fz = Math.cos(r);
     const p = d.obj.position;
-    const reach = d.dims.len / 2 + 1.6 + d.speed * 0.9;
+    const ahead = 1.6 + d.speed * 0.9;
+    // the vehicle's footprint stretched forward by the stopping distance (plus a little elbow room)
+    corners(p.x + fx * (ahead / 2), p.z + fz * (ahead / 2), fx, fz, d.dims.len / 2 + ahead / 2, d.dims.wid / 2 + 0.3, A);
     for (const o of others) {
       if (o === d || !o.obj.visible) continue;
       const rx = o.obj.position.x - p.x;
       const rz = o.obj.position.z - p.z;
       const along = rx * fx + rz * fz;
-      if (along <= 0) continue;
-      const side = Math.abs(rx * fz - rz * fx);
-      const gap = along - halfAlong(o, fx, fz) - d.dims.len / 2;
-      if (gap + d.dims.len / 2 < reach && side < d.dims.wid / 2 + halfAlong(o, fz, -fx) + 0.35) {
-        d.blockGap = gap;
+      if (along <= 0) continue; // only what's in front
+      const ro = o.obj.rotation.y;
+      const ofx = Math.sin(ro);
+      const ofz = Math.cos(ro);
+      corners(o.obj.position.x, o.obj.position.z, ofx, ofz, o.dims.len / 2, o.dims.wid / 2, Bc);
+      if (boxesTouch(fx, fz, ofx, ofz)) {
+        d.blockGap = along - halfAlong(o, fx, fz) - d.dims.len / 2;
         return o;
       }
     }
     return null;
+  };
+
+  // people on foot: a vehicle stops for anyone in the strip ahead of it, and publishes that strip
+  // (its "zone") so people about to step into it wait for it to pass
+  let pedestrians = () => [];
+  const zones = [];
+  // points along the road a vehicle is about to drive (its own route, so it looks round the bend it's taking)
+  const _p = new THREE.Vector3();
+  const _t = new THREE.Vector3();
+  const ahead = (d, from, to, step) => {
+    const out = [];
+    if (!d.curve) return out;
+    for (let s = from; s <= to + 0.001; s += step) {
+      const u = Math.min(1, (d.s + s) / d.len);
+      d.curve.getPointAt(u, _p);
+      d.curve.getTangentAt(Math.min(0.999, u), _t);
+      out.push({ x: _p.x, z: _p.z, fx: _t.x, fz: _t.z });
+      if (u >= 1) break;
+    }
+    return out;
+  };
+  const pedBlock = (d) => {
+    const reach = d.dims.len / 2 + 1.2 + d.speed * 0.7;
+    const half = d.dims.wid / 2 + 0.45;
+    const pts = ahead(d, d.dims.len / 2 - 0.2, reach, 0.8);
+    if (!pts.length) return false;
+    const px = d.obj.position.x;
+    const pz = d.obj.position.z;
+    const R = reach + 2;
+    for (const list of pedestrians()) {
+      for (const a of list) {
+        if (!a.active || a.pos.y > 0.3) continue;
+        const rx = a.pos.x - px;
+        const rz = a.pos.z - pz;
+        if (rx > R || rx < -R || rz > R || rz < -R) continue;
+        for (const p of pts) {
+          const dx = a.pos.x - p.x;
+          const dz = a.pos.z - p.z;
+          if (Math.abs(dx * p.fx + dz * p.fz) < 0.5 && Math.abs(dx * p.fz - dz * p.fx) < half) return true;
+        }
+      }
+    }
+    return false;
   };
 
   let gateBusy = false;
@@ -266,6 +343,26 @@ export function buildVehicles(scene, rng, P) {
     fleet,
     setGateBusy(b) {
       gateBusy = b;
+    },
+    /** who's on foot (lists of people, checked by the vehicles) */
+    setPedestrians(fn) {
+      pedestrians = fn;
+    },
+    /** the strips in front of moving school vehicles (shared with the people) */
+    zones,
+    /** true when no moving road traffic (either way) is about to pass x — a school vehicle waits for that before pulling out */
+    roadClear(x) {
+      for (const t of traffic) {
+        if (t.v < 0.5) continue; // (traffic already waiting for us is fine)
+        const ahead = (x - t.x) * t.dir; // how far it still has to go to reach x
+        if (ahead > -6 && ahead < 38) return false;
+      }
+      return true;
+    },
+    /** true when no road traffic in the near lane is about to pass x (an auto waits for a gap before pulling out) */
+    laneClear(x) {
+      for (const t of traffic) if (t.dir > 0 && t.v > 0.5 && t.x > x - 30 && t.x < x + 8) return false; // (traffic already waiting for us is fine)
+      return true;
     },
     /** true when no vehicle is within r metres of (x, z) — used before a vehicle sets off onto the road */
     clearAt(x, z, r = 9) {
@@ -291,7 +388,24 @@ export function buildVehicles(scene, rng, P) {
       for (const d of fleetList) {
         const b = d.blockedBy;
         // a stand-off (each in the other's way): the one that set off first edges on, if there's room
-        d.blocked = Boolean(b) && !(b.blockedBy === d && d.stamp < b.stamp && d.blockGap > 1.5);
+        const byVehicle = Boolean(b) && !(b.blockedBy === d && d.stamp < b.stamp && d.blockGap > 1.5);
+        const byPeople = d.active && !byVehicle && pedBlock(d);
+        // (it takes a moment of nobody in the way to forget it was waiting, so people keep holding back)
+        d.pedWait = byPeople ? (d.pedWait || 0) + dt : Math.max(0, (d.pedWait || 0) - dt * 0.5);
+        d.blocked = byVehicle || byPeople;
+      }
+      // zones in front of moving school vehicles, for the people on foot
+      zones.length = 0;
+      for (const d of fleetList) {
+        // vehicles that are moving, or have waited a while for people to pass (then the people hold back
+        // and let it go); people may walk past one that's just standing in a queue
+        if (!d.active || !d.obj.visible || (d.speed < 0.4 && !(d.pedWait > 2))) continue;
+        const r = d.obj.rotation.y + (d.reverse ? Math.PI : 0);
+        zones.push({ x: d.obj.position.x, z: d.obj.position.z, fx: Math.sin(r), fz: Math.cos(r), back: -d.dims.len / 2 - 0.3, front: d.dims.len / 2 + 1.2, half: d.dims.wid / 2 + 1.5, path: d.dims.wid / 2 + 0.45, nose: d.dims.len / 2 - 0.6 });
+        // and short strips along the bend it's about to drive: anyone standing in them steps aside
+        for (const p of ahead(d, d.dims.len / 2 + 1.0, d.dims.len / 2 + 1.0 + 4 + d.speed * 1.2, 2.4)) {
+          zones.push({ x: p.x, z: p.z, fx: p.fx, fz: p.fz, back: -1.6, front: 1.6, half: d.dims.wid / 2 + 1.5, path: d.dims.wid / 2 + 0.45, nose: -9 });
+        }
       }
       for (const d of fleetList) d.update(dt);
       // keep a safe gap to the vehicle ahead in the same lane and stop for turning buses
@@ -312,7 +426,7 @@ export function buildVehicles(scene, rng, P) {
           const dz = Math.abs(d.obj.position.z - t.z);
           if (dz > halfAlong(d, 0, 1) + t.dims.wid / 2 + 0.3) continue;
           const gap = (d.obj.position.x - t.x) * t.dir - halfAlong(d, 1, 0) - t.dims.len / 2;
-          if (gap > -1 && gap < 14) want = Math.min(want, Math.max(0, (gap - 2.5) * 1.5));
+          if (gap > -t.dims.len && gap < 14) want = Math.min(want, Math.max(0, (gap - 2.5) * 1.5));
         }
         t.v += (want - t.v) * Math.min(1, dt * 2);
         t.x += t.dir * t.v * dt;

@@ -73,6 +73,11 @@ export function createMaterials(L, { quality = 'high' } = {}) {
     brick: textured('brick_color.jpg', 'brick_bump.jpg', 1.6, { roughnessMap: L.tex('brick_rough.jpg', { srgb: false }), color: '#d9b8a6' }),
     rooftiles: textured('rooftiles_color.jpg', 'rooftiles_normal.jpg', 2.4, { roughness: 0.8 }),
     wood: textured('wood_color.jpg', null, 1.6, { color: '#8a5a3c', roughness: 0.7 }),
+    // inside the rooms
+    floorIn: textured('tiles_color.jpg', 'tiles_normal.jpg', 0.9, { color: '#e9dfcc', roughness: 0.42 }),
+    kota: textured('concrete_color.jpg', 'concrete_normal.jpg', 1.4, { color: '#9aa093', roughness: 0.5 }),
+    deskWood: textured('wood_color.jpg', null, 1.1, { color: '#c08a55', roughness: 0.5 }),
+    doorWood: new THREE.MeshStandardMaterial({ map: L.tex('wood_color.jpg'), color: '#7a4a2c', roughness: 0.6 }),
     dirt: textured('dirt_color.jpg', 'dirt_normal.jpg', 4, { roughness: 1 }),
 
     // painted metal, plastic and glass
@@ -87,6 +92,8 @@ export function createMaterials(L, { quality = 'high' } = {}) {
     kerbBlack: std({ color: '#222222', roughness: 0.8 }),
     kerbYellow: std({ color: '#e6b422', roughness: 0.75 }),
     glass: new THREE.MeshPhysicalMaterial({ color: '#2b3a40', roughness: 0.05, metalness: 0.1, envMapIntensity: 1.6, ior: 1.5, specularIntensity: 1 }),
+    // clear window glass: you can see into the rooms (a faint sky reflection on top)
+    glassClear: new THREE.MeshStandardMaterial({ color: '#b7cdd2', roughness: 0.04, metalness: 0.0, transparent: true, opacity: 0.16, envMapIntensity: 1.8, depthWrite: false }),
     glassTown: new THREE.MeshPhysicalMaterial({ color: '#39464b', roughness: 0.12, metalness: 0.15, envMapIntensity: 1.2 }),
     interior: std({ color: '#3a342b', roughness: 1, emissive: '#ffcf8a', emissiveIntensity: 0 }),
     board: std({ color: '#203b2f', roughness: 0.85 }),
@@ -134,6 +141,10 @@ export function createMaterials(L, { quality = 'high' } = {}) {
     m.customProgramCacheKey = () => 'townFar';
     return m;
   });
+
+  M.glassClearLit = M.glassClear.clone();
+  M.glassClearLit.emissive = new THREE.Color('#ffd9a0');
+  M.glassClearLit.emissiveIntensity = 0;
 
   const anis = quality === 'low' ? 4 : 8;
   Object.values(M)

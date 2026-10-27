@@ -106,6 +106,14 @@ export default function Home() {
   const [bell, setBell] = useState(null);
   const [frame, setFrame] = useState(() => frameFor(typeof window === 'undefined' ? 1280 : window.innerWidth));
   const scene = useRef(null);
+  // picture quality: Auto fits the device; HD and 4K are the viewer's own choice (remembered)
+  const [quality, setQuality] = useState(() => {
+    try {
+      return localStorage.getItem('pp-quality') || 'auto';
+    } catch {
+      return 'auto';
+    }
+  });
   const audio = useRef(null);
   const startAt = useRef(campusMinutesNow());
   const bellTimer = useRef(null);
@@ -151,6 +159,22 @@ export default function Home() {
     if (stop !== null) endTour();
     scene.current?.jumpTo(m);
   };
+  const lookInside = (room) => {
+    if (stop !== null) endTour();
+    scene.current?.lookInside(room);
+  };
+  const changeQuality = (q) => {
+    if (q === quality) return;
+    try {
+      localStorage.setItem('pp-quality', q);
+    } catch {
+      /* private window: just for this visit */
+    }
+    startAt.current = Math.floor(clock.m); // the rebuilt campus carries on from the same moment
+    setLive(false);
+    setProgress(0);
+    setQuality(q);
+  };
   const nextPhase = () => {
     const i = PHASES.findIndex((p) => p.id === clock.phase?.id);
     jumpTo(PHASES[(i + 1) % PHASES.length].jump);
@@ -182,6 +206,8 @@ export default function Home() {
       {/* ---------- living campus ---------- */}
       <section className="relative h-[100svh] min-h-[600px] overflow-hidden">
         <CampusScene
+          key={quality}
+          quality={quality}
           ref={scene}
           time={backdrop}
           startMinutes={startAt.current}
@@ -236,6 +262,28 @@ export default function Home() {
               <p className="mt-2 hidden text-[13px] leading-snug text-ink/70 sm:block">{clock.phase?.now}</p>
               <div className="mt-3 hidden sm:block">
                 <DayStrip minutes={clock.m} onJump={jumpTo} />
+              </div>
+              <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                <span className="mr-0.5 font-mono text-[10px] uppercase tracking-[0.14em] text-ink/55">Look inside</span>
+                {[['classroom', 'Classroom'], ['staff', 'Staff room'], ['hod', 'HOD office'], ['library', 'Library']].map(([k, label]) => (
+                  <button key={k} onClick={() => lookInside(k)} className="rounded-[8px] border border-line px-2 py-1 font-mono text-[10px] uppercase tracking-[0.1em] text-ink/75 hover:border-brass/60 hover:text-ink">
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <div className="mt-2 hidden items-center gap-1.5 sm:flex">
+                <span className="mr-0.5 font-mono text-[10px] uppercase tracking-[0.14em] text-ink/55">Quality</span>
+                {[['auto', 'Auto'], ['hd', 'HD'], ['4k', '4K']].map(([k, label]) => (
+                  <button
+                    key={k}
+                    onClick={() => changeQuality(k)}
+                    aria-pressed={quality === k}
+                    className={`rounded-[8px] border px-2 py-1 font-mono text-[10px] uppercase tracking-[0.1em] ${quality === k ? 'border-brass/70 bg-brass/15 text-ink' : 'border-line text-ink/70 hover:text-ink'}`}
+                  >
+                    {label}
+                  </button>
+                ))}
+                {quality === '4k' && <span className="font-mono text-[10px] text-ink/50">heavy on small laptops</span>}
               </div>
             </div>
           </div>

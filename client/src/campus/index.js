@@ -7,17 +7,18 @@ import { Batch } from './batch.js';
 import { createSky } from './sky.js';
 import { createPost } from './post.js';
 import { buildSchool } from './school.js';
+import { buildInteriors, createMovers, interiorMaterials } from './interiors.js';
 import { buildGrounds } from './grounds.js';
 import { buildTown } from './town.js';
 import { buildTrees } from './trees.js';
 import { buildVehicles } from './vehicles.js';
-import { createPeople } from './people.js';
+import { createPeople, setVehicleZones } from './people.js';
 import { buildFlag, buildBirds } from './life.js';
 import { createSim, DAY_START } from './sim.js';
-import { PROFILES, detectProfile, Governor } from './quality.js';
+import { PROFILES, pickProfile, Governor } from './quality.js';
 import { rng as makeRng, ease } from './util.js';
 import { STOPS } from './stops.js';
-import { ROOMS } from './rooms.js';
+import { ROOMS, CLASSROOMS, STAFF, HOD, BLOCKS, STAIRS } from './rooms.js';
 import { lodReady } from './lod.js';
 
 /*
@@ -31,26 +32,58 @@ export { STOPS };
 export const prepared = lodReady;
 
 const HOME_VIEW = { cam: [78, 30, 92], target: [-6, 2, -6] };
+const IM_KEYS = [0, 1, 2, 3, 4, 5].map((i) => 'chalk' + i);
+
+/** a camera standing inside a room (block frame u, v, height above the floor) looking at another point in it */
+const inRoom = (r, cu, cv, ch, tu, tv, th) => {
+  const { at } = BLOCKS[r.block];
+  const [cx, cz] = at(r.rc + cu, cv);
+  const [tx, tz] = at(r.rc + tu, tv);
+  const y = r.feet;
+  return [[cx, y + ch, cz], [tx, y + th, tz], { inside: true }];
+};
+// the rooms the camera looks into: a classroom from its back corner, the staff room, the HOD's office, the library
+export const INSIDE_VIEWS = {
+  classroom: inRoom(CLASSROOMS[1], 3.25, 0.55, 2.25, -2.6, 3.6, 1.0),
+  classroom2: inRoom(CLASSROOMS[0], -3.0, 5.9, 2.3, 2.2, 2.2, 0.8),
+  staff: inRoom(STAFF, -3.1, 0.6, 2.2, 1.2, 3.6, 0.8),
+  hod: inRoom(HOD, -2.7, 0.9, 1.95, 2.0, 3.5, 0.95),
+  library: [[-73.6, 2.6, -41.4], [-61, 0.9, -46.8], { inside: true }],
+  stairs: (() => {
+    const st = STAIRS[1];
+    const { at } = BLOCKS[st.block];
+    const [cx, cz] = at(st.um, 12.5);
+    const [tx, tz] = at(st.um, 3.2);
+    return [[cx, 3.2, cz], [tx, 2.4, tz], {}];
+  })(),
+};
 export const HOD_VIEW = { cam: [0, 24, 36], target: [0, 4, -16] };
 export const STILL_VIEW = { cam: [-58, 24, 66], target: [2, 6, -14] };
 
 // shots the director cuts between, by part of the day: [camera, target]
 export const SHOTS = {
   arrival: [[[22, 7, 55], [2, 1.5, 37]], [[9, 4.2, 51], [-1, 1.2, 36]], [[-8, 11, 41], [8, 1, 20]], [[18, 13, 11], [31, 1.2, 31]], [[-16, 9, -6], [-26, 4, -22]]],
-  gather: [[[-20, 10, 14], [-4, 3, -16]], [[14, 12, 18], [2, 2, -10]], [[24, 9, -6], [27, -1, -24]]],
+  gather: [['stairs'], [[-20, 10, 14], [-4, 3, -16]], [[14, 12, 18], [2, 2, -10]]],
   assembly: [[[-28, 14, 16], [0, 1.5, -6]], [[18, 7, 12], [-2, 1.8, -8]], [[0, 16, 26], [0, 0.5, -4]]],
-  toclass: [[[-18, 9, 10], [-6, 3, -18]], [[20, 10, 12], [8, 3, -14]]],
-  classes: [[[58, 18, 12], [85, 0, -28]], [[12, 9, -6], [8, 6, -26]], [[-20, 7, 10], [-28, 4, -8]]],
-  lunch: [[[-30, 12, 14], [0, 1.4, -4]], [[-42, 10, 18], [-62, 1, 2]], [[5, 9, 22], [-8, 1.2, 4]]],
-  classes2: [[[60, 16, 6], [85, 0, -30]], [[16, 9, -4], [10, 6, -26]]],
+  toclass: [[[-18, 9, 10], [-6, 3, -18]], ['stairs'], [[20, 10, 12], [8, 3, -14]]],
+  classes: [['classroom'], [[58, 18, 12], [85, 0, -28]], ['staff'], [[12, 9, -6], [8, 6, -26]], ['hod'], ['classroom2']],
+  lunch: [[[-30, 12, 14], [0, 1.4, -4]], [[-14, 4.2, 6], [-4, 1.2, -6]], [[-42, 10, 18], [-62, 1, 2]], [[5, 9, 22], [-8, 1.2, 4]]],
+  classes2: [['library'], [[60, 16, 6], [85, 0, -30]], ['classroom']],
   home: [[[-22, 10, 12], [0, 2, -12]], [[18, 13, 11], [31, 1.2, 31]], [[14, 8, 56], [2, 1.5, 36]], [[6, 7, 57], [-6, 1, 46]], [[-26, 9, 16], [0, 1.4, 4]]],
   evening: [[[96, 30, 100], [-6, 3, -8]], [[60, 16, 10], [85, 0, -30]]],
 };
 
-export function createCampus(container, { mode = 'hero', time = 'morning', startMinutes, onProgress, onReady, onClock, onBell, view } = {}) {
+/** a director's shot as a view: shotView('arrival', 1), or shotView('inside', 'staff') */
+export function shotView(phase, i) {
+  let shot = phase === 'inside' ? [i] : SHOTS[phase][+i || 0];
+  if (typeof shot[0] === 'string') shot = INSIDE_VIEWS[shot[0]];
+  return { cam: shot[0], target: shot[1], inside: Boolean(shot[2]?.inside) };
+}
+
+export function createCampus(container, { mode = 'hero', time = 'morning', startMinutes, onProgress, onReady, onClock, onBell, view, quality = 'auto' } = {}) {
   const still = mode === 'still';
   const forcedQ = new URLSearchParams(window.location.search).get('q');
-  const P = still ? PROFILES[forcedQ] || PROFILES.still : detectProfile();
+  const P = still ? PROFILES[forcedQ] || PROFILES.still : pickProfile(quality);
   const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
   const coarse = window.matchMedia?.('(pointer: coarse)').matches;
 
@@ -61,7 +94,8 @@ export function createCampus(container, { mode = 'hero', time = 'morning', start
     onReady?.(false);
     return null;
   }
-  const maxDpr = Math.min(window.devicePixelRatio || 1, P.dpr);
+  // 4K draws at twice the screen's resolution (supersampling); otherwise up to the screen's own sharpness
+  const maxDpr = P.name === '4k' ? 2 : Math.min(window.devicePixelRatio || 1, P.dpr);
   renderer.setPixelRatio(maxDpr);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -84,18 +118,26 @@ export function createCampus(container, { mode = 'hero', time = 'morning', start
   M.glassLit = M.glass.clone();
   M.glassLit.emissive = new THREE.Color('#ffcf8c');
   M.glassLit.emissiveIntensity = 0;
-  M.glassStory = M.glass.clone();
+  M.glassStory = M.glassClear.clone();
   M.glassStory.emissive = new THREE.Color('#ff3b2a');
   M.glassStory.emissiveIntensity = 0;
+  const IM = interiorMaterials();
+  IM.chalkboards.forEach((m, i) => (M['chalk' + i] = m));
+  delete IM.chalkboards;
+  for (const [k, v] of Object.entries(IM)) if (v) M[k] = v;
 
   const sky = createSky(renderer, scene, { shadowSize: P.shadow, flare: !still && P.name !== 'low' });
 
   // ---- static world, merged per material ----
   const B = new Batch(M);
   const school = buildSchool(scene, B, M, rng);
+  const fans = buildInteriors(B);
   const grounds = buildGrounds(scene, B, M, L, rng, P);
   const flag = buildFlag(scene, B, 0, -11);
-  B.build(scene, { noCast: ['line', 'tiles', 'pavers', 'asphalt', 'track', 'court', 'courtOut'] });
+  // furniture inside never needs to cast sun shadows (the walls and roof already do)
+  const INSIDE = ['floorIn', 'deskWood', 'deskMetal', 'dado', 'tube', 'almirah', 'poster', 'notice', 'books', 'screen', 'leather', 'fanWhite', 'kota', ...IM_KEYS];
+  B.build(scene, { noCast: ['line', 'tiles', 'pavers', 'asphalt', 'track', 'court', 'courtOut', ...INSIDE] });
+  const movers = createMovers(scene, M, fans, grounds.libraryFans);
   const TB = new Batch(M);
   buildTown(TB, M, rng, P);
   TB.build(scene, { castShadow: P.townShadows });
@@ -241,10 +283,44 @@ export function createCampus(container, { mode = 'hero', time = 'morning', start
       shotPhase = phaseId;
       shotIdx = 0;
     } else shotIdx = (shotIdx + 1) % list.length;
-    const [cam, tgt] = list[shotIdx];
-    flyTo(cam, tgt, 4.5);
+    let shot = list[shotIdx];
+    if (typeof shot[0] === 'string') shot = INSIDE_VIEWS[shot[0]];
+    let [cam, tgt, o = {}] = shot;
+    // on a tall phone screen the view is narrow: step back so the shot isn't all wall
+    if (camera.aspect < 0.8 && !o.inside) {
+      const k = 1.45;
+      cam = [tgt[0] + (cam[0] - tgt[0]) * k, tgt[1] + (cam[1] - tgt[1]) * k, Math.min(57, tgt[2] + (cam[2] - tgt[2]) * k)];
+    }
+    // into (or out of) a room: a quick cut, never a flight through the wall
+    if (o.inside || insideShot) cutTo(cam, tgt, Boolean(o.inside));
+    else flyTo(cam, tgt, 4.5);
     drift.angle = 0;
-    shotTimer = 15 + rng() * 6;
+    shotTimer = o.inside ? 11 + rng() * 3 : 15 + rng() * 6;
+  };
+  let insideShot = false;
+  const setInside = (on) => {
+    insideShot = on;
+    camera.near = on ? 0.12 : 0.6;
+    camera.updateProjectionMatrix();
+    if (controls) controls.minDistance = on ? 0.4 : 10;
+  };
+  const cutTo = (cam, tgt, inside) => {
+    flight = null;
+    const apply = () => {
+      setInside(inside);
+      camera.position.set(...cam);
+      (controls ? controls.target : target).set(...tgt);
+      camera.lookAt(...tgt);
+      renderer.shadowMap.needsUpdate = true;
+    };
+    if (still || reduceMotion) return apply();
+    const el = renderer.domElement;
+    el.style.transition = 'opacity 0.3s ease';
+    el.style.opacity = '0';
+    setTimeout(() => {
+      apply();
+      el.style.opacity = '1';
+    }, 320);
   };
 
   // frame the action beside the page's text card (desktop: right of it, phones: above it)
@@ -278,6 +354,9 @@ export function createCampus(container, { mode = 'hero', time = 'morning', start
   const applyTime = (rebuildEnv) => {
     light = sky.apply(minutesNow, { rebuildEnv, envDeg: P.envDeg });
     M.glassLit.emissiveIntensity = light.lights * 0.95;
+    M.glassClearLit.emissiveIntensity = light.lights * 0.35;
+    M.glassClearLit.opacity = 0.16 + light.lights * 0.25;
+    M.tube.emissiveIntensity = 1.1 + light.lights * 1.6;
     M.night.value = light.lights;
     M.lampOff.emissiveIntensity = light.lights * 6;
     school.dialMat.emissiveIntensity = light.lights * 0.5;
@@ -303,7 +382,9 @@ export function createCampus(container, { mode = 'hero', time = 'morning', start
   // keeps the frame rate up by trading detail for speed
   const governor = new Governor({
     maxDpr,
-    minDpr: Math.min(maxDpr, 0.6),
+    // the viewer's choice of HD or 4K is kept sharp: only the effects step down, and only when it's really slow
+    minDpr: P.name === '4k' ? 1.5 : P.name === 'hd' ? 1 : Math.min(maxDpr, coarse ? 0.6 : 0.85),
+    low: P.name === '4k' ? 16 : P.name === 'hd' ? 24 : 30,
     onChange: ({ dpr, step }) => {
       if (dpr) {
         renderer.setPixelRatio(dpr);
@@ -348,6 +429,7 @@ export function createCampus(container, { mode = 'hero', time = 'morning', start
   document.addEventListener('visibilitychange', onVis);
 
   applyTime(true);
+  if (v0.inside) setInside(true);
   updateStory();
 
   const frame = (dt) => {
@@ -368,6 +450,10 @@ export function createCampus(container, { mode = 'hero', time = 'morning', start
     if (gs) gs.uniforms.uTime.value = elapsed;
     flag.update(elapsed);
     vehicles.update(dt);
+    if (people) {
+      people.posed.update(elapsed);
+      movers.update(dt, [people.crowd.agents, people.pool.agents], (room) => sim?.busy(room));
+    }
     birds?.update(elapsed, dt, light.lights);
     if (coverItems.length) updateCover(elapsed);
     if (beacon.visible) {
@@ -391,7 +477,7 @@ export function createCampus(container, { mode = 'hero', time = 'morning', start
       if (flight.t >= 1) flight = null;
     } else if (controls) {
       // a slow sideways drift keeps every shot alive
-      if (director && !touring && performance.now() > userUntil) {
+      if (director && !touring && !insideShot && performance.now() > userUntil) {
         const t = controls.target;
         const off = camera.position.clone().sub(t);
         off.applyAxisAngle(new THREE.Vector3(0, 1, 0), dt * 0.018);
@@ -423,6 +509,9 @@ export function createCampus(container, { mode = 'hero', time = 'morning', start
   const readyP = Promise.all([peopleP, birdsP]).then(async ([p, b]) => {
     people = p;
     birds = b;
+    // vehicles and people on foot look out for each other
+    vehicles.setPedestrians(() => [people.crowd.agents, people.pool.agents]);
+    setVehicleZones(vehicles.zones);
     sim = createSim({ people, vehicles, grounds, scene, rng, onBell });
     sim.onClock((m, ph) => onClock?.(m, ph));
     sim.jumpTo(minutesNow);
@@ -463,11 +552,56 @@ export function createCampus(container, { mode = 'hero', time = 'morning', start
     get fps() {
       return governor.fps;
     },
+    /** who is standing in front of a vehicle (testing) */
+    debugBlockers(kind = 'buses', i = 0) {
+      const d = vehicles.fleet[kind][i];
+      if (!d) return null;
+      const r = d.obj.rotation.y;
+      const fx = Math.sin(r);
+      const fz = Math.cos(r);
+      const out = [];
+      for (const list of [people.crowd.agents, people.pool.agents]) {
+        for (const a of list) {
+          if (!a.active) continue;
+          const rx = a.pos.x - d.obj.position.x;
+          const rz = a.pos.z - d.obj.position.z;
+          const along = rx * fx + rz * fz;
+          const side = Math.abs(rx * fz - rz * fx);
+          if (along > 2 && along < 9 && side < 3) out.push({ tag: a.tag, along: +along.toFixed(1), side: +side.toFixed(1), pos: [+a.pos.x.toFixed(2), +a.pos.z.toFixed(2)], goal: a.path?.[a.seg] ? [+a.path[a.seg].x.toFixed(1), +a.path[a.seg].z.toFixed(1)] : null, seg: a.seg, n: a.path?.length, hold: a.holdT, wait: +(a.wait || 0).toFixed(1) });
+        }
+      }
+      return { bus: [d.obj.position.x, d.obj.position.z], blocked: d.blocked, ped: d.pedWait, speed: d.speed, zones: vehicles.zones.map((z) => [+z.x.toFixed(1), +z.z.toFixed(1), +z.fx.toFixed(2), +z.fz.toFixed(2), z.back, +z.front.toFixed(1), z.half, z.path, z.nose]), out: out.slice(0, 6) };
+    },
+    /** a walking student with a bag (testing) */
+    findWalker(tag = 'arriving') {
+      const a = people?.crowd.agents.find((g) => g.active && g.tag === tag && g.bag && g.path && g.seg < g.path.length && g.pos.y < 0.3);
+      return a ? { pos: a.pos.toArray(), heading: a.heading, kind: a.kind } : null;
+    },
+    /** where an animated person of this kind is (testing): e.g. 'teacherF' */
+    findPool(prefix) {
+      const a = people?.pool.agents.find((g) => g.active && g.kind.startsWith(prefix));
+      return a ? { pos: a.pos.toArray(), heading: a.heading, kind: a.kind, tag: a.tag } : null;
+    },
+    /** people with a given tag (testing): where they are and where they're heading */
+    debugAgents(tag, n = 5) {
+      const out = [];
+      for (const a of people?.crowd.agents || []) {
+        if (!a.active || a.tag !== tag) continue;
+        out.push({ pos: a.pos.toArray().map((v) => +v.toFixed(2)), seg: a.seg, len: a.path?.length, goal: a.path?.[a.seg]?.toArray().map((v) => +v.toFixed(2)), hold: a.holdT, wait: a.wait, run: a.run, pace: +(a.pace || 0).toFixed(2), data: a.data && { cls: a.data.cls } });
+        if (out.length >= n) break;
+      }
+      return out;
+    },
     /** what the school day is doing (testing) */
     debugState() {
       const F = vehicles.fleet;
-      const v = (d) => ({ vis: d.obj.visible, act: d.active, x: +d.obj.position.x.toFixed(1), z: +d.obj.position.z.toFixed(1), load: d.load, boarding: d.boarding });
+      const v = (d) => ({ vis: d.obj.visible, act: d.active, x: +d.obj.position.x.toFixed(1), z: +d.obj.position.z.toFixed(1), load: d.load, boarding: d.boarding, blocked: d.blocked, hold: d.hold, ped: +(d.pedWait || 0).toFixed(1), by: d.blockedBy ? d.blockedBy.kind || (d.blockedBy.obj ? "veh" : "traffic") : null, speed: +(d.speed || 0).toFixed(1) });
       return { minutes: sim?.minutes, phase: sim?.phase?.id, agents: people?.pool.activeCount(), crowd: people?.crowd.activeCount(), sim: sim?.debug(), footprints: vehicles.footprints(), buses: F.buses.map(v), cars: F.cars.map(v), autos: F.autos.map(v) };
+    },
+    /** like view(), for a view that may be inside a room ({ cam, target, inside }) */
+    viewInside(v) {
+      setInside(Boolean(v.inside));
+      return this.view(v.cam, v.target);
     },
     /** point the camera somewhere and draw one frame (testing and stills) */
     view(cam, tgt) {
@@ -490,6 +624,29 @@ export function createCampus(container, { mode = 'hero', time = 'morning', start
       window.__campusInfo = { calls: r.calls, triangles: r.triangles, profile: P.name };
       return renderer.domElement;
     },
+    /** how long the per-frame work takes without drawing, in ms per frame (testing) */
+    benchJS(n = 120) {
+      sim?.setPaused(false);
+      const t = { sim: 0, veh: 0, posed: 0, movers: 0 };
+      for (let i = 0; i < n; i++) {
+        let a = performance.now();
+        sim?.update(1 / 60);
+        let b = performance.now();
+        t.sim += b - a;
+        vehicles.update(1 / 60);
+        a = performance.now();
+        t.veh += a - b;
+        people.posed.update(i / 60);
+        b = performance.now();
+        t.posed += b - a;
+        movers.update(1 / 60, [people.crowd.agents, people.pool.agents], (room) => sim?.busy(room));
+        a = performance.now();
+        t.movers += a - b;
+      }
+      if (still) sim?.setPaused(true);
+      for (const k of Object.keys(t)) t[k] = +(t[k] / n).toFixed(3);
+      return t;
+    },
     /** run the school day for a while without drawing (used to make stills of a moment) */
     advance(seconds) {
       sim?.setPaused(false);
@@ -502,10 +659,17 @@ export function createCampus(container, { mode = 'hero', time = 'morning', start
     },
     /** jump the school day to a time (minutes after midnight) */
     jumpTo(m) {
-      minutesNow = m;
-      sim?.jumpTo(m);
-      shotTimer = 0.5;
-      envTimer = 99;
+      // a quick dip to black hides the cut
+      const el = renderer.domElement;
+      el.style.transition = 'opacity 0.25s ease';
+      el.style.opacity = '0';
+      setTimeout(() => {
+        minutesNow = m;
+        sim?.jumpTo(m);
+        shotTimer = 0.5;
+        envTimer = 99;
+        el.style.opacity = '1';
+      }, still ? 0 : 260);
     },
     setTime(name) {
       this.jumpTo(name === 'evening' ? 15 * 60 + 18 : DAY_START);
@@ -526,11 +690,14 @@ export function createCampus(container, { mode = 'hero', time = 'morning', start
       const r = ROOMS[i % ROOMS.length];
       if (!r) return;
       userUntil = performance.now() + 60000;
-      flyTo([r.x + r.nx * 15 + r.nz * 4, r.y + 6, r.z + r.nz * 15 - r.nx * 4], [r.x, r.y, r.z], 2.4);
+      const cam = [r.x + r.nx * 15 + r.nz * 4, r.y + 6, r.z + r.nz * 15 - r.nx * 4];
+      if (insideShot) cutTo(cam, [r.x, r.y, r.z], false);
+      else flyTo(cam, [r.x, r.y, r.z], 2.4);
     },
     /** back to the whole-campus view */
     overview() {
-      flyTo(v0.cam, v0.target, 2.4);
+      if (insideShot) cutTo(v0.cam, v0.target, false);
+      else flyTo(v0.cam, v0.target, 2.4);
     },
     goTo(i) {
       const s = STOPS[i];
@@ -538,15 +705,27 @@ export function createCampus(container, { mode = 'hero', time = 'morning', start
       touring = true;
       sim?.setSpeed(0.5);
       if (s.clock && sim && Math.abs(sim.minutes - s.clock) > 20) this.jumpTo(s.clock);
-      flyTo(s.cam, s.target, 2.8);
+      if (s.inside || insideShot) cutTo(s.cam, s.target, Boolean(s.inside));
+      else flyTo(s.cam, s.target, 2.8);
       beacon.position.set(...s.beacon);
-      beacon.visible = true;
+      beacon.visible = !s.inside;
       beam.visible = !s.story;
       forcedStory = Boolean(s.story);
       if (s.story) storyClock = 0;
     },
+    /** look inside a room: 'classroom', 'staff', 'hod', 'library' (jumps to lesson time if school's not in) */
+    lookInside(name) {
+      const v = INSIDE_VIEWS[name];
+      if (!v) return;
+      userUntil = performance.now() + 30000;
+      const m = sim?.minutes ?? minutesNow;
+      const inSession = (m > 8 * 60 + 40 && m < 12 * 60 + 30) || (m > 13 * 60 + 10 && m < 15 * 60 + 20);
+      if (!inSession) this.jumpTo(9 * 60 + 30);
+      cutTo(v[0], v[1], true);
+    },
     endTour() {
       touring = false;
+      if (insideShot) cutTo(v0.cam, v0.target, false);
       sim?.setSpeed(null);
       beacon.visible = false;
       forcedStory = false;

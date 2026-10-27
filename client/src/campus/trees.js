@@ -26,7 +26,7 @@ function makeVariant(spec, far = false, leafScale = 1.25) {
   if (spec.leafTint) json.leaves.tint = new THREE.Color(spec.leafTint).getHex();
   const bush = spec.key.startsWith('bush');
   // far trees: fewer, bigger leaves and simpler branches (they are only a few pixels tall)
-  json.leaves.count = Math.max(2, Math.round(json.leaves.count * (bush ? 0.8 * Math.min(1, leafScale) : far ? 0.36 : leafScale)));
+  json.leaves.count = Math.max(2, Math.round(json.leaves.count * (bush ? 0.85 : far ? 0.36 : leafScale)));
   if (far) {
     json.leaves.size *= 1.7;
     for (const lvl of Object.keys(json.branch.sections)) json.branch.sections[lvl] = Math.max(3, Math.round(json.branch.sections[lvl] * 0.4));
@@ -126,7 +126,7 @@ export function buildTrees(scene, L, rng, { P, merge }) {
     spots.bush.push([-9.6 + rng() * 0.3, z]);
     spots.bush2.push([9.6 + rng() * 0.3, z]);
   }
-  for (let x = -34; x <= 34; x += 3.4) if (Math.abs(x) > 8) spots.bush[x % 2 ? 'push' : 'push']([x, 9.4]);
+  for (let x = -34; x <= 34; x += 3.4) if (Math.abs(x) > 8 && Math.abs(Math.abs(x) - 27.2) > 0.5) spots.bush[x % 2 ? 'push' : 'push']([x, 9.4]);
   for (let z = -22; z <= 6; z += 3.4) {
     spots.bush2.push([-38.2, z]);
     spots.bush2.push([38.2, z]);

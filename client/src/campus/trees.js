@@ -109,7 +109,9 @@ export function buildTrees(scene, L, rng, { P, merge }) {
   const { x0, x1, z0, z1 } = CAMPUS;
   // a row of ashoka trees just inside the compound wall
   for (let x = x0 + 4; x <= x1 - 4; x += 9) {
-    if (Math.abs(x) > 14) spots.ashoka.push([x + rng() * 1.5, z1 - 3.5]);
+    const xr = x + rng() * 1.5;
+    // keep the gate and the buses' entry lane along the front wall clear
+    if (Math.abs(x) > 14 && !(x > 10 && x < 54)) spots.ashoka.push([xr, z1 - 3.5]);
     spots.ashoka.push([x + rng() * 1.5, z0 + 3.5]);
   }
   for (let z = z0 + 8; z <= z1 - 8; z += 10) {
@@ -182,7 +184,8 @@ export function buildTrees(scene, L, rng, { P, merge }) {
   // ---- coconut palms along the drive and by the gate ----
   const palmSpots = [];
   // palms frame the drive; the north end is kept clear for buses and cars turning in
-  for (let z = 14; z <= 26; z += 6) palmSpots.push([-11.6, z], [11.6, z]);
+  for (let z = 14; z <= 26; z += 6) palmSpots.push([-11.6, z]);
+  palmSpots.push([11.6, 14], [11.6, 20]); // (the third one would stand where buses turn out of their bays)
   palmSpots.push([-20, 30], [-40, 30], [30, 14], [40, 15], [60, 38], [-60, 38], [-88, 40], [118, 40]);
   const palm = palmGeometries(L, rng, palmSpots);
   const meshes = [

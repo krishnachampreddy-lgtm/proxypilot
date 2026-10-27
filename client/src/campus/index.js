@@ -36,12 +36,14 @@ export const STILL_VIEW = { cam: [-58, 24, 66], target: [2, 6, -14] };
 
 // shots the director cuts between, by part of the day: [camera, target]
 export const SHOTS = {
-  arrival: [[[22, 7, 55], [2, 1.5, 37]], [[-8, 11, 41], [8, 1, 20]], [[9, 11, 13], [31, 1.2, 31]]],
-  assembly: [[[-24, 13, 22], [0, 1.5, -6]], [[18, 7, 12], [-2, 1.8, -8]]],
+  arrival: [[[22, 7, 55], [2, 1.5, 37]], [[9, 4.2, 51], [-1, 1.2, 36]], [[-8, 11, 41], [8, 1, 20]], [[18, 13, 11], [31, 1.2, 31]], [[-16, 9, -6], [-26, 4, -22]]],
+  gather: [[[-20, 10, 14], [-4, 3, -16]], [[14, 12, 18], [2, 2, -10]], [[24, 9, -6], [27, -1, -24]]],
+  assembly: [[[-28, 14, 16], [0, 1.5, -6]], [[18, 7, 12], [-2, 1.8, -8]], [[0, 16, 26], [0, 0.5, -4]]],
+  toclass: [[[-18, 9, 10], [-6, 3, -18]], [[20, 10, 12], [8, 3, -14]]],
   classes: [[[58, 18, 12], [85, 0, -28]], [[12, 9, -6], [8, 6, -26]], [[-20, 7, 10], [-28, 4, -8]]],
   lunch: [[[-30, 12, 14], [0, 1.4, -4]], [[-42, 10, 18], [-62, 1, 2]], [[5, 9, 22], [-8, 1.2, 4]]],
   classes2: [[[60, 16, 6], [85, 0, -30]], [[16, 9, -4], [10, 6, -26]]],
-  home: [[[9, 11, 13], [31, 1.2, 31]], [[14, 8, 56], [2, 1.5, 36]], [[-26, 9, 16], [0, 1.4, 4]]],
+  home: [[[-22, 10, 12], [0, 2, -12]], [[18, 13, 11], [31, 1.2, 31]], [[14, 8, 56], [2, 1.5, 36]], [[6, 7, 57], [-6, 1, 46]], [[-26, 9, 16], [0, 1.4, 4]]],
   evening: [[[96, 30, 100], [-6, 3, -8]], [[60, 16, 10], [85, 0, -30]]],
 };
 
@@ -100,7 +102,7 @@ export function createCampus(container, { mode = 'hero', time = 'morning', start
 
   const trees = buildTrees(scene, L, rng, { P, merge: (list) => mergeGeometries(list) });
   const vehicles = buildVehicles(scene, rng, P);
-  const peopleP = createPeople(scene, L, rng, P);
+  const peopleP = createPeople(scene, L, rng, P, camera);
   const birdsP = still ? Promise.resolve(null) : buildBirds(scene, L, rng, { count: P.name === 'low' ? 6 : 12 }).catch(() => null); // birds are a nice extra, never a blocker
 
   // ---- tour beacon ----
@@ -274,7 +276,7 @@ export function createCampus(container, { mode = 'hero', time = 'morning', start
   const YELLOW = new THREE.Color('#f4c542');
 
   const applyTime = (rebuildEnv) => {
-    light = sky.apply(minutesNow, { rebuildEnv });
+    light = sky.apply(minutesNow, { rebuildEnv, envDeg: P.envDeg });
     M.glassLit.emissiveIntensity = light.lights * 0.95;
     M.night.value = light.lights;
     M.lampOff.emissiveIntensity = light.lights * 6;
@@ -307,17 +309,23 @@ export function createCampus(container, { mode = 'hero', time = 'morning', start
         renderer.setPixelRatio(dpr);
         resize();
       }
-      if (step === 1 && !post.dropAO()) governor.step++;
-      if (step === 2) post.dropBloom();
+      // each step switches one thing off; returning false means "nothing to do here, try the next"
+      if (step === 1) return post.dropAO();
+      if (step === 2) return post.dropBloom();
       if (step === 3) {
+        if (!grounds.grass.visible) return false;
         grounds.grass.visible = false;
-        trees.setFar(false);
       }
-      if (step === 4) shadowEvery = Math.max(shadowEvery, 3);
+      if (step === 4) trees.setFar(false);
       if (step === 5) {
+        if (shadowEvery >= 3) return false;
+        shadowEvery = 3;
+      }
+      if (step === 6) {
         sky.sun.castShadow = false;
         renderer.shadowMap.needsUpdate = true;
       }
+      if (step > 6) return true; // nothing left to switch off
     },
   });
 
@@ -350,7 +358,7 @@ export function createCampus(container, { mode = 'hero', time = 'morning', start
       minutesNow = sim.minutes;
     }
     envTimer += dt;
-    const rebuild = envTimer > 1.5;
+    const rebuild = envTimer > P.envEvery; // re-lighting from the sky is costly on small chips
     if (rebuild) envTimer = 0;
     applyTime(rebuild);
     updateStory();
@@ -459,7 +467,7 @@ export function createCampus(container, { mode = 'hero', time = 'morning', start
     debugState() {
       const F = vehicles.fleet;
       const v = (d) => ({ vis: d.obj.visible, act: d.active, x: +d.obj.position.x.toFixed(1), z: +d.obj.position.z.toFixed(1), load: d.load, boarding: d.boarding });
-      return { minutes: sim?.minutes, phase: sim?.phase?.id, agents: people?.pool.activeCount(), crowd: people?.crowd.activeCount(), fill: people?.assembly.fill, buses: F.buses.map(v), cars: F.cars.map(v), autos: F.autos.map(v) };
+      return { minutes: sim?.minutes, phase: sim?.phase?.id, agents: people?.pool.activeCount(), crowd: people?.crowd.activeCount(), sim: sim?.debug(), footprints: vehicles.footprints(), buses: F.buses.map(v), cars: F.cars.map(v), autos: F.autos.map(v) };
     },
     /** point the camera somewhere and draw one frame (testing and stills) */
     view(cam, tgt) {

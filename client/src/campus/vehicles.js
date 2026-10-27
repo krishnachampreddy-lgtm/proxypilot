@@ -86,7 +86,8 @@ function busTemplate() {
     [new THREE.BoxGeometry(2.3, 0.06, 9.2), yellow, 0, 3.17, 0],
   ];
   for (let z = -4.2; z <= 3.4; z += 1.25) parts.push([new THREE.BoxGeometry(2.49, 0.95, 0.07), yellow, 0, 2.3, z]);
-  for (const s of [-1, 1]) for (let y = 2.0; y <= 2.6; y += 0.3) parts.push([new THREE.BoxGeometry(0.03, 0.025, 8.0), new THREE.MeshStandardMaterial({ color: '#d9d9d9', metalness: 0.9, roughness: 0.3 }), s * 1.26, y, -0.5]);
+  const chrome = new THREE.MeshStandardMaterial({ color: '#d9d9d9', metalness: 0.9, roughness: 0.3 }); // one material, so the strips merge into one draw
+  for (const s of [-1, 1]) for (let y = 2.0; y <= 2.6; y += 0.3) parts.push([new THREE.BoxGeometry(0.03, 0.025, 8.0), chrome, s * 1.26, y, -0.5]);
   parts.push([new THREE.PlaneGeometry(4.2, 0.4), side, 1.235, 1.84, -0.4, { ry: Math.PI / 2 }]);
   parts.push([new THREE.PlaneGeometry(4.2, 0.4), side, -1.235, 1.84, -0.4, { ry: -Math.PI / 2 }]);
   parts.push([new THREE.PlaneGeometry(1.6, 0.3), sign, 0, 2.95, 4.81]);
@@ -126,10 +127,18 @@ function autoTemplate() {
   return template(parts);
 }
 
-/** A vehicle that drives along a smooth route, slowing for curves and stopping at the end. */
+let driveStamp = 0;
+
+/**
+ * A vehicle that drives along a smooth route, slowing for curves and stopping at the end.
+ * It never drives into another vehicle: if anything is in the way ahead it waits (see `blocked`).
+ */
 export class Driver {
-  constructor(obj) {
+  constructor(obj, dims) {
     this.obj = obj;
+    this.dims = dims; // { len, wid }
+    this.blocked = false;
+    this.stamp = 0;
     this.curve = null;
     this.s = 0;
     this.len = 0;
@@ -139,7 +148,8 @@ export class Driver {
     this.onEnd = null;
     this.hold = false;
   }
-  drive(points, { max = 8, onEnd = null, start = 0 } = {}) {
+  drive(points, { max = 8, onEnd = null, start = 0, reverse = false } = {}) {
+    this.reverse = reverse; // reversing: the vehicle faces against its direction of travel
     this.curve = new THREE.CatmullRomCurve3(points.map((p) => new THREE.Vector3(p[0], 0.06, p[1])), false, 'centripetal', 0.3);
     this.len = this.curve.getLength();
     this.s = 0;
@@ -147,6 +157,7 @@ export class Driver {
     this.speed = start;
     this.onEnd = onEnd;
     this.active = true;
+    this.stamp = ++driveStamp; // who set off first gets to go first at a stand-off
     this.obj.visible = true;
     this.place();
   }
@@ -155,7 +166,7 @@ export class Driver {
     const p = this.curve.getPointAt(t);
     const d = this.curve.getTangentAt(Math.min(0.999, t));
     this.obj.position.copy(p);
-    this.obj.rotation.y = Math.atan2(d.x, d.z);
+    this.obj.rotation.y = Math.atan2(d.x, d.z) + (this.reverse ? Math.PI : 0);
   }
   update(dt) {
     if (!this.active) return;
@@ -167,8 +178,9 @@ export class Driver {
     const bend = 1 - Math.max(0, a.dot(b));
     let target = this.max * (1 - Math.min(0.7, bend * 6));
     target = Math.min(target, Math.max(0.8, left * 0.6));
-    if (this.hold) target = 0;
-    this.speed += (target - this.speed) * Math.min(1, dt * 1.6);
+    if (this.hold || this.blocked) target = 0;
+    // brake harder than we accelerate
+    this.speed += (target - this.speed) * Math.min(1, dt * (target < this.speed ? 4 : 1.4));
     this.s = Math.min(this.len, this.s + this.speed * dt);
     this.place();
     if (left < 0.05) {
@@ -189,26 +201,19 @@ export function buildVehicles(scene, rng, P) {
   scene.add(group);
 
   // the school's own vehicles are moved by the school-day simulation
-  const fleet = {
-    buses: [0, 1, 2, 3].map(() => {
-      const o = bus.clone();
-      o.visible = false;
-      group.add(o);
-      return new Driver(o);
-    }),
-    autos: [0, 1].map(() => {
-      const o = auto.clone();
-      o.visible = false;
-      group.add(o);
-      return new Driver(o);
-    }),
-    cars: [0, 1, 2].map((i) => {
-      const o = cars[i].clone();
-      o.visible = false;
-      group.add(o);
-      return new Driver(o);
-    }),
+  const DIMS = { bus: { len: 9.8, wid: 2.55 }, car: { len: 4.0, wid: 1.8 }, auto: { len: 2.7, wid: 1.45 } };
+  const make = (tpl, dims) => {
+    const o = tpl.clone();
+    o.visible = false;
+    group.add(o);
+    return new Driver(o, dims);
   };
+  const fleet = {
+    buses: [0, 1, 2, 3].map(() => make(bus, DIMS.bus)),
+    autos: [0, 1, 2, 3, 4, 5].map(() => make(auto, DIMS.auto)),
+    cars: [0, 1, 2].map((i) => make(cars[i], DIMS.car)),
+  };
+  const fleetList = [...fleet.buses, ...fleet.autos, ...fleet.cars];
 
   // through traffic on the main road (it waits while a school bus turns at the gate)
   const traffic = [];
@@ -219,8 +224,41 @@ export function buildVehicles(scene, rng, P) {
     const v = kind.clone();
     v.rotation.y = dir > 0 ? Math.PI / 2 : -Math.PI / 2;
     group.add(v);
-    traffic.push({ obj: v, dir, x: rng() * 600 - 300, speed: kind === bus ? 7 : kind === auto ? 8 : 9 + rng() * 5, v: 0, z: lane(dir) });
+    traffic.push({ obj: v, dir, x: rng() * 600 - 300, speed: kind === bus ? 7 : kind === auto ? 8 : 9 + rng() * 5, v: 0, z: lane(dir), dims: kind === bus ? DIMS.bus : kind === auto ? DIMS.auto : DIMS.car });
   }
+
+  // ---- keeping vehicles apart ----
+  // Every school vehicle looks ahead along its heading; anything whose footprint overlaps
+  // the strip in front of it (parked or moving) makes it wait. Two vehicles that block
+  // each other (at a merge) resolve it by who set off first.
+  const others = [];
+  const halfAlong = (o, fx, fz) => {
+    // half the size of vehicle o measured along direction (fx, fz)
+    const r = o.obj.rotation.y;
+    const c = Math.abs(Math.sin(r) * fx + Math.cos(r) * fz);
+    return (o.dims.len / 2) * c + (o.dims.wid / 2) * Math.sqrt(Math.max(0, 1 - c * c));
+  };
+  const blocker = (d) => {
+    const r = d.obj.rotation.y + (d.reverse ? Math.PI : 0); // look where it's going
+    const fx = Math.sin(r);
+    const fz = Math.cos(r);
+    const p = d.obj.position;
+    const reach = d.dims.len / 2 + 1.6 + d.speed * 0.9;
+    for (const o of others) {
+      if (o === d || !o.obj.visible) continue;
+      const rx = o.obj.position.x - p.x;
+      const rz = o.obj.position.z - p.z;
+      const along = rx * fx + rz * fz;
+      if (along <= 0) continue;
+      const side = Math.abs(rx * fz - rz * fx);
+      const gap = along - halfAlong(o, fx, fz) - d.dims.len / 2;
+      if (gap + d.dims.len / 2 < reach && side < d.dims.wid / 2 + halfAlong(o, fz, -fx) + 0.35) {
+        d.blockGap = gap;
+        return o;
+      }
+    }
+    return null;
+  };
 
   let gateBusy = false;
   return {
@@ -229,8 +267,33 @@ export function buildVehicles(scene, rng, P) {
     setGateBusy(b) {
       gateBusy = b;
     },
+    /** true when no vehicle is within r metres of (x, z) — used before a vehicle sets off onto the road */
+    clearAt(x, z, r = 9) {
+      for (const d of fleetList) if (d.obj.visible && Math.hypot(d.obj.position.x - x, d.obj.position.z - z) < r) return false;
+      for (const t of traffic) if (Math.hypot(t.x - x, t.z - z) < r) return false;
+      return true;
+    },
+    /** footprints of every vehicle on show (for tests) */
+    footprints() {
+      const out = [];
+      const add = (o, name) => o.obj.visible && out.push({ name, x: o.obj.position.x, z: o.obj.position.z, r: o.obj.rotation.y, len: o.dims.len, wid: o.dims.wid });
+      fleet.buses.forEach((d, i) => add(d, 'bus' + i));
+      fleet.autos.forEach((d, i) => add(d, 'auto' + i));
+      fleet.cars.forEach((d, i) => add(d, 'car' + i));
+      traffic.forEach((t, i) => add(t, 'traffic' + i));
+      return out;
+    },
     update(dt) {
-      for (const d of [...fleet.buses, ...fleet.autos, ...fleet.cars]) d.update(dt);
+      others.length = 0;
+      for (const d of fleetList) others.push(d);
+      for (const t of traffic) others.push(t);
+      for (const d of fleetList) d.blockedBy = d.active ? blocker(d) : null;
+      for (const d of fleetList) {
+        const b = d.blockedBy;
+        // a stand-off (each in the other's way): the one that set off first edges on, if there's room
+        d.blocked = Boolean(b) && !(b.blockedBy === d && d.stamp < b.stamp && d.blockGap > 1.5);
+      }
+      for (const d of fleetList) d.update(dt);
       // keep a safe gap to the vehicle ahead in the same lane and stop for turning buses
       for (const t of traffic) {
         let want = t.speed * (Math.abs(t.x) < 25 ? 0.6 : 1);
@@ -240,8 +303,16 @@ export function buildVehicles(scene, rng, P) {
         if (gateBusy && toLine > 0 && toLine < 16) want = Math.min(want, toLine * 0.7);
         for (const o of traffic) {
           if (o === t || o.dir !== t.dir) continue;
-          const gap = (o.x - t.x) * t.dir;
-          if (gap > 0 && gap < 11) want = Math.min(want, Math.max(0, (gap - 6) * 1.5));
+          const gap = (o.x - t.x) * t.dir - (o.dims.len + t.dims.len) / 2; // bumper to bumper
+          if (gap > -2 && gap < 10) want = Math.min(want, Math.max(0, (gap - 2.5) * 1.5));
+        }
+        // school vehicles pulling out onto the road, or waiting on it
+        for (const d of fleetList) {
+          if (!d.obj.visible) continue;
+          const dz = Math.abs(d.obj.position.z - t.z);
+          if (dz > halfAlong(d, 0, 1) + t.dims.wid / 2 + 0.3) continue;
+          const gap = (d.obj.position.x - t.x) * t.dir - halfAlong(d, 1, 0) - t.dims.len / 2;
+          if (gap > -1 && gap < 14) want = Math.min(want, Math.max(0, (gap - 2.5) * 1.5));
         }
         t.v += (want - t.v) * Math.min(1, dt * 2);
         t.x += t.dir * t.v * dt;

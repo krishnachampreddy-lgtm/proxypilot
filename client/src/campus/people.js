@@ -9,10 +9,10 @@ import { simplifyGeometry, compactGeometry } from './lod.js';
   that paints each body region from its rest-pose position: shirt, tie, belt, trousers or
   pinafore, socks, shoes, skin and hair.
   - teachers and the students in games are fully animated (skinned, with blended walk/run/idle)
-  - the crowd — everyone streaming in, out and around — uses frames of the walk and run
-    cycles baked into plain meshes and drawn with instancing, so a hundred-plus students
-    walk at once for the cost of a few draw calls
-  - the morning assembly is posed copies, also instanced
+  - the student body — a thousand and more, streaming in with school bags, standing in
+    assembly, going home — uses frames of the walk and run cycles baked into plain meshes
+    and drawn with instancing, in two levels of detail (students far from the camera use
+    a much lighter mesh and a soft blob shadow), and only the ones in view are drawn
 */
 
 const WALK_FRAMES = 8;
@@ -166,49 +166,16 @@ function bakePose(gltf, clip, time, { surfaceOnly = false } = {}) {
  * - assembly: rows of students drawn with instancing; `setFill(0..1)` shows how many have arrived
  * - pool: animated people who walk routes, wait, run, and leave — driven by the school-day simulation
  */
-export async function createPeople(scene, L, rng, P) {
+export async function createPeople(scene, L, rng, P, camera) {
   const gltf = await L.model('xbot.glb');
   const clips = Object.fromEntries(gltf.animations.map((c) => [c.name, c]));
   for (const m of skinnedParts(gltf.scene)) m.geometry.setAttribute('bindPos', m.geometry.attributes.position.clone());
   const mats = Object.fromEntries(Object.keys(PALETTES).map((k) => [k, uniformMaterial(k)]));
 
-  // ---------- assembly rows (front row nearest the flag fills first) ----------
-  const pose = simplifyGeometry(bakePose(gltf, clips.idle, 0.6, { surfaceOnly: true }), P.crowdLod);
-  const rows = P.name === 'low' ? 4 : 6;
-  const cols = P.name === 'low' ? 6 : 8;
-  const slots = [];
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols; c++) {
-      const x = -(cols - 1) * 2 + c * 4 + (rng() - 0.5) * 0.15;
-      const z = -7.5 + r * 1.35 + (rng() - 0.5) * 0.12;
-      slots.push({ x: x - 0.55, z, girl: false }, { x: x + 0.55, z, girl: true });
-    }
-  }
-  const make = (list, mat) => {
-    const im = new THREE.InstancedMesh(pose, mat, list.length);
-    const m4 = new THREE.Matrix4();
-    const q = new THREE.Quaternion();
-    list.forEach((sl, i) => {
-      const s = 0.8 + rng() * 0.1;
-      q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI + (rng() - 0.5) * 0.14);
-      m4.compose(new THREE.Vector3(sl.x, 0.08, sl.z), q, new THREE.Vector3(s, s, s));
-      im.setMatrixAt(i, m4);
-      im.setColorAt(i, new THREE.Color().setScalar(0.92 + rng() * 0.08));
-    });
-    im.castShadow = true;
-    im.receiveShadow = true;
-    im.count = 0;
-    scene.add(im);
-    return im;
-  };
-  const boySlots = slots.filter((s) => !s.girl);
-  const girlSlots = slots.filter((s) => s.girl);
-  const boys = make(boySlots, mats.boy);
-  const girls = make(girlSlots, mats.girl);
-  // teachers who lead the assembly
+  // ---------- teachers who lead the assembly (posed) ----------
   const tPose = simplifyGeometry(bakePose(gltf, clips.idle, 1.4), P.peopleLod);
   const leaders = new THREE.Group();
-  for (const [x, z, mat, ry] of [[-19, -4, mats.teacherF, Math.PI / 2], [19, -4, mats.teacher, -Math.PI / 2], [2.2, -10.5, mats.teacherF, 0]]) {
+  for (const [x, z, mat, ry] of [[-24.6, -5, mats.teacherF, Math.PI / 2], [24.6, -5, mats.teacher, -Math.PI / 2], [2.4, -10.6, mats.teacherF, 0], [-2.6, -10.4, mats.teacher, 0]]) {
     const t = new THREE.Mesh(tPose, mat);
     t.position.set(x, 0.08, z);
     t.rotation.y = ry;
@@ -217,79 +184,129 @@ export async function createPeople(scene, L, rng, P) {
   }
   leaders.visible = false;
   scene.add(leaders);
-
   const assembly = {
-    slots,
-    fill: 0,
-    setFill(f) {
-      this.fill = Math.max(0, Math.min(1, f));
-      boys.count = Math.round(boySlots.length * this.fill);
-      girls.count = Math.round(girlSlots.length * this.fill);
-    },
     setLeaders(on) {
       leaders.visible = on;
     },
-    /** where the next arriving student will stand */
-    slotFor(i) {
-      return slots[Math.min(slots.length - 1, i)];
-    },
   };
 
-
-  // ---------- the crowd ----------
-  // frames of the walk and run cycles, baked once, lightened, then instanced
-  const lean = (g) => compactGeometry(simplifyGeometry(g, P.crowdLod));
-  const frames = [];
-  for (let i = 0; i < WALK_FRAMES; i++) frames.push(lean(bakePose(gltf, clips.walk, (i / WALK_FRAMES) * clips.walk.duration, { surfaceOnly: true })));
-  for (let i = 0; i < RUN_FRAMES; i++) frames.push(lean(bakePose(gltf, clips.run, (i / RUN_FRAMES) * clips.run.duration, { surfaceOnly: true })));
-  frames.push(pose); // standing
+  // ---------- the student body ----------
+  // every frame of the walk and run cycles, baked once, then lightened twice:
+  // a detailed version for students near the camera and a very light one for the rest
+  const lods = [P.crowdLod, P.crowdFar];
+  const bake = (clip, t) => bakePose(gltf, clip, t, { surfaceOnly: true });
+  const raw = [];
+  for (let i = 0; i < WALK_FRAMES; i++) raw.push(bake(clips.walk, (i / WALK_FRAMES) * clips.walk.duration));
+  for (let i = 0; i < RUN_FRAMES; i++) raw.push(bake(clips.run, (i / RUN_FRAMES) * clips.run.duration));
+  raw.push(bake(clips.idle, 0.6));
   const IDLE = WALK_FRAMES + RUN_FRAMES;
-  const cap = P.crowd;
+  const frameGeo = lods.map((ratio) => raw.map((g) => compactGeometry(simplifyGeometry(g.clone(), ratio, 0.2))));
+  raw.forEach((g) => g.dispose());
+
+  const N = P.students;
   const crowdKinds = ['boy', 'girl'];
-  const crowdMeshes = {};
-  for (const k of crowdKinds) {
-    crowdMeshes[k] = frames.map((g) => {
-      const im = new THREE.InstancedMesh(g, mats[k], cap);
-      im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-      im.setColorAt(0, new THREE.Color(1, 1, 1));
-      im.instanceColor.setUsage(THREE.DynamicDrawUsage);
-      im.count = 0;
-      im.visible = false;
-      im.frustumCulled = false; // instances move every frame
-      im.castShadow = true;
-      im.receiveShadow = true;
-      scene.add(im);
-      return im;
-    });
-  }
+  // [kind][lod][frame] -> InstancedMesh
+  const meshes = crowdKinds.map((k) =>
+    frameGeo.map((list, lod) =>
+      list.map((g, f) => {
+        const cap = lod === 0 ? (f === IDLE ? Math.ceil(N * 0.5) : Math.ceil(N * 0.3)) : f === IDLE ? N : Math.ceil(N * 0.5);
+        const im = new THREE.InstancedMesh(g, mats[k], cap);
+        im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+        im.setColorAt(0, new THREE.Color(1, 1, 1));
+        im.instanceColor.setUsage(THREE.DynamicDrawUsage);
+        im.count = 0;
+        im.visible = false;
+        im.frustumCulled = false; // students move every frame; culling is done per student below
+        im.castShadow = lod === 0;
+        im.receiveShadow = lod === 0;
+        im.userData.cap = cap;
+        scene.add(im);
+        return im;
+      })
+    )
+  );
+  const allMeshes = meshes.flat(2);
+
+  // school bags: a pack with a front pocket, worn on the back
+  const bagGeo = mergeGeometries([new THREE.BoxGeometry(0.3, 0.38, 0.13).translate(0, 0, -0.065), new THREE.BoxGeometry(0.22, 0.16, 0.05).translate(0, -0.07, -0.15), new THREE.BoxGeometry(0.1, 0.03, 0.03).translate(0, 0.205, -0.06)]);
+  const bags = new THREE.InstancedMesh(bagGeo, new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.75 }), N);
+  bags.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  bags.setColorAt(0, new THREE.Color(1, 1, 1));
+  bags.count = 0;
+  bags.frustumCulled = false;
+  bags.castShadow = true;
+  scene.add(bags);
+  const BAG_COLORS = ['#1d2f5a', '#6e1f2b', '#222222', '#24476b', '#b0365a', '#2f5d3a', '#5a3b8c', '#c4581f', '#3a3a3a', '#0f5b78'].map((c) => new THREE.Color(c));
+
+  // soft round shadows under far-away students (they don't cast real ones)
+  const blobTex = (() => {
+    const c = document.createElement('canvas');
+    c.width = c.height = 64;
+    const g = c.getContext('2d');
+    const grd = g.createRadialGradient(32, 32, 2, 32, 32, 31);
+    grd.addColorStop(0, 'rgba(0,0,0,0.55)');
+    grd.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = grd;
+    g.fillRect(0, 0, 64, 64);
+    return new THREE.CanvasTexture(c);
+  })();
+  const blobs = new THREE.InstancedMesh(
+    new THREE.PlaneGeometry(0.85, 0.85).rotateX(-Math.PI / 2),
+    new THREE.MeshBasicMaterial({ map: blobTex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, toneMapped: false }),
+    N
+  );
+  blobs.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  blobs.count = 0;
+  blobs.frustumCulled = false;
+  blobs.renderOrder = 1;
+  scene.add(blobs);
+
   const crowdAgents = [];
-  for (let i = 0; i < cap; i++) {
+  for (let i = 0; i < N; i++) {
     crowdAgents.push({
-      i, teacher: false, kind: crowdKinds[i % 2], size: 0.76 + rng() * 0.14, tone: 0.86 + rng() * 0.14,
-      off: new THREE.Vector3((rng() - 0.5) * 1.6, 0, (rng() - 0.5) * 1.6),
+      i, teacher: false, kind: crowdKinds[i % 2], size: 0.78 + rng() * 0.14, tone: 0.84 + rng() * 0.16,
+      bagColor: BAG_COLORS[Math.floor(rng() * BAG_COLORS.length)], bag: false,
+      off: new THREE.Vector3((rng() - 0.5) * 1.5, 0, (rng() - 0.5) * 1.5),
       active: false, path: null, seg: 0, run: false, pace: 1, wait: 0, onArrive: null,
-      pos: new THREE.Vector3(), heading: 0, face: null, tag: null, anim: rng(),
+      pos: new THREE.Vector3(), heading: 0, face: null, tag: null, anim: rng(), data: null,
     });
   }
+  const free = crowdAgents.slice().reverse(); // a stack of idle students
+  let activeCount = 0;
+
   const m4 = new THREE.Matrix4();
   const q = new THREE.Quaternion();
   const up = new THREE.Vector3(0, 1, 0);
   const sc = new THREE.Vector3();
   const col = new THREE.Color();
+  const bagOff = new THREE.Vector3();
+  const bagPos = new THREE.Vector3();
+  const frustum = new THREE.Frustum();
+  const projView = new THREE.Matrix4();
+  const sphere = new THREE.Sphere(new THREE.Vector3(), 1.2);
+  const near2 = P.lodRadius * P.lodRadius;
+  const tmpC = new THREE.Vector3();
+
   const crowd = {
     agents: crowdAgents,
-    activeCount() {
-      return crowdAgents.reduce((n, a) => n + (a.active ? 1 : 0), 0);
+    get capacity() {
+      return N;
     },
-    /** same as pool.spawn, for students only; returns null when the crowd is at its limit */
+    activeCount: () => activeCount,
+    freeCount: () => free.length,
+    /** a student enters the scene; returns null when everyone is already out */
     spawn(points, opts = {}) {
-      const a = crowdAgents.find((g) => !g.active);
+      const a = free.pop();
       if (!a) return null;
       a.active = true;
+      activeCount++;
       a.sys = this;
       a.tag = opts.tag || null;
-      a.pos.copy(points[0]).add(a.off);
-      a.heading = points[1] ? Math.atan2(points[1].x - points[0].x, points[1].z - points[0].z) : 0;
+      a.bag = Boolean(opts.bag);
+      a.data = opts.data ?? null;
+      a.pos.copy(points[0]);
+      if (opts.jitterStart !== false) a.pos.add(a.off);
+      a.heading = points[1] ? Math.atan2(points[1].x - points[0].x, points[1].z - points[0].z) : (opts.face ?? 0);
       this.route(a, points.slice(1), opts);
       return a;
     },
@@ -297,38 +314,90 @@ export async function createPeople(scene, L, rng, P) {
       setRoute(a, points, opts);
     },
     release(a) {
+      if (!a.active) return;
       a.active = false;
       a.tag = null;
+      a.data = null;
+      a.onArrive = null;
+      activeCount--;
+      free.push(a);
     },
     releaseAll(filter = () => true) {
       for (const a of crowdAgents) if (a.active && filter(a)) this.release(a);
     },
     update(dt) {
-      for (const k of crowdKinds) for (const im of crowdMeshes[k]) im.count = 0;
-      for (const a of crowdAgents) {
+      for (const im of allMeshes) im.count = 0;
+      let nb = 0;
+      let nblob = 0;
+      camera.updateMatrixWorld();
+      projView.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+      frustum.setFromProjectionMatrix(projView);
+      const cam = camera.position;
+      for (let i = 0; i < N; i++) {
+        const a = crowdAgents[i];
         if (!a.active) continue;
-        const moving = step(a, dt, tmp);
+        const moving = step(a, dt, tmpC);
         if (!a.active) continue;
         let f = IDLE;
         if (moving) {
           a.anim = (a.anim + (dt / (a.run ? clips.run.duration : clips.walk.duration)) * (a.run ? 1 : a.pace)) % 1;
           f = a.run ? WALK_FRAMES + Math.floor(a.anim * RUN_FRAMES) : Math.floor(a.anim * WALK_FRAMES);
         }
-        const im = crowdMeshes[a.kind][f];
+        // only students in view are drawn
+        sphere.center.set(a.pos.x, a.pos.y + 0.9, a.pos.z);
+        if (!frustum.intersectsSphere(sphere)) continue;
+        const dx = a.pos.x - cam.x;
+        const dy = a.pos.y - cam.y;
+        const dz = a.pos.z - cam.z;
+        const lod = dx * dx + dy * dy + dz * dz < near2 ? 0 : 1;
+        const im = meshes[a.kind === 'boy' ? 0 : 1][lod][f];
+        if (im.count >= im.userData.cap) continue;
         q.setFromAxisAngle(up, a.heading);
-        m4.compose(a.pos, q, sc.setScalar(a.size));
+        sc.setScalar(a.size);
+        m4.compose(a.pos, q, sc);
         im.setMatrixAt(im.count, m4);
         im.setColorAt(im.count, col.setScalar(a.tone));
         im.count++;
-      }
-      for (const k of crowdKinds) {
-        for (const im of crowdMeshes[k]) {
-          im.visible = im.count > 0;
-          if (im.visible) {
-            im.instanceMatrix.needsUpdate = true;
-            im.instanceColor.needsUpdate = true;
-          }
+        if (a.bag) {
+          bagOff.set(0, 1.13 * a.size, -0.13 * a.size).applyQuaternion(q);
+          bagPos.copy(a.pos).add(bagOff);
+          m4.compose(bagPos, q, sc);
+          bags.setMatrixAt(nb, m4);
+          bags.setColorAt(nb, a.bagColor);
+          nb++;
         }
+        if (lod === 1) {
+          m4.makeTranslation(a.pos.x, a.pos.y + 0.02, a.pos.z);
+          blobs.setMatrixAt(nblob++, m4);
+        }
+      }
+      for (const im of allMeshes) {
+        im.visible = im.count > 0;
+        if (im.visible) {
+          im.instanceMatrix.clearUpdateRanges();
+          im.instanceMatrix.addUpdateRange(0, im.count * 16);
+          im.instanceMatrix.needsUpdate = true;
+          im.instanceColor.clearUpdateRanges();
+          im.instanceColor.addUpdateRange(0, im.count * 3);
+          im.instanceColor.needsUpdate = true;
+        }
+      }
+      bags.count = nb;
+      bags.visible = nb > 0;
+      if (nb) {
+        bags.instanceMatrix.clearUpdateRanges();
+        bags.instanceMatrix.addUpdateRange(0, nb * 16);
+        bags.instanceMatrix.needsUpdate = true;
+        bags.instanceColor.clearUpdateRanges();
+        bags.instanceColor.addUpdateRange(0, nb * 3);
+        bags.instanceColor.needsUpdate = true;
+      }
+      blobs.count = nblob;
+      blobs.visible = nblob > 0;
+      if (nblob) {
+        blobs.instanceMatrix.clearUpdateRanges();
+        blobs.instanceMatrix.addUpdateRange(0, nblob * 16);
+        blobs.instanceMatrix.needsUpdate = true;
       }
     },
   };
@@ -340,7 +409,7 @@ export async function createPeople(scene, L, rng, P) {
   const agents = [];
   const teacherEvery = 7;
   for (let i = 0; i < P.walkers; i++) {
-    const teacher = i % teacherEvery === 3;
+    const teacher = [1, 3, 5].includes(i % teacherEvery); // about three in seven are teachers
     const kind = teacher ? (i % 2 ? 'teacher' : 'teacherF') : kinds[i % kinds.length];
     const obj = cloneSkinned(gltf.scene);
     obj.traverse((o) => {

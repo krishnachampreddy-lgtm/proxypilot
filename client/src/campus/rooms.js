@@ -47,3 +47,60 @@ export function roomFor(className, allClasses) {
   const i = sorted.indexOf(className);
   return ROOMS[(i >= 0 ? i : sorted.length) % ROOMS.length];
 }
+
+// ---------------- getting around the building ----------------
+// Staircases: where students leave the ground floor (`ground`, in the courtyard),
+// the foot of the stairs inside the corridor (`base`), and the same spot on each floor.
+const G = 0.08; // feet on the paving
+const V0 = PLINTH + 0.03; // feet on a corridor floor
+export const STAIRS = [
+  { id: 'A-west', base: [-5.2, -26.2], ground: [-5.6, -23.4], via: [-9, -9] },
+  { id: 'A-east', base: [5.2, -26.2], ground: [5.6, -23.4], via: [9, -9] },
+  { id: 'NW', base: [-28.2, -26.2], ground: [-25.4, -23.6], via: [-14, -12] },
+  { id: 'NE', base: [28.2, -26.2], ground: [25.4, -23.6], via: [14, -12] },
+  { id: 'W-front', base: [-28.2, 6.6], ground: [-25.4, 6.4], via: [-12, 5] },
+  { id: 'E-front', base: [28.2, 6.6], ground: [25.4, 6.4], via: [12, 5] },
+];
+
+/** classroom doors and the nearest staircase for every room */
+function withDoor(r, rc) {
+  const du = rc - 2.5; // the door is 2.5 m before the room centre along the block
+  const f = r.floor;
+  const y = f === 0 ? V0 : floorY(f) + 0.03;
+  let door, corr, front, stair;
+  if (r.block === 'A') {
+    door = [du, -34 + CD + 0.35];
+    corr = [du, -26.2];
+    front = [du, -23.6];
+    stair = du < 0 ? (du > -16 ? 0 : 2) : du < 16 ? 1 : 3;
+  } else if (r.block === 'B') {
+    door = [-36 + CD + 0.35, -8.5 - du];
+    corr = [-28.2, -8.5 - du];
+    front = [-25.6, -8.5 - du];
+    stair = corr[1] < -10 ? 2 : 4;
+  } else {
+    door = [36 - CD - 0.35, -8.5 + du];
+    corr = [28.2, -8.5 + du];
+    front = [25.6, -8.5 + du];
+    stair = corr[1] < -10 ? 3 : 5;
+  }
+  return { ...r, rc, y, door, corr, front, stair };
+}
+
+// rooms in the same order as ROOMS (so a class keeps its room), with doors added
+const RC = (() => {
+  const out = [];
+  for (const [b, rc, f] of PREFERRED) out.push([b, rc, f]);
+  const seen = new Set(PREFERRED.map((p) => p.join()));
+  for (const [b, rcs] of [['A', [-25.2, -18, -10.8, 10.8, 18, 25.2]], ['B', [-12.9, -5.7, 1.5, 8.7]], ['C', [-12.9, -5.7, 1.5, 8.7]]]) {
+    for (const rc of rcs) for (let f = 0; f < 3; f++) {
+      if (b === 'B' && rc === -5.7 && f === 0) continue;
+      if (!seen.has([b, rc, f].join())) out.push([b, rc, f]);
+    }
+  }
+  return out;
+})();
+
+/** the 40 classrooms the school day uses */
+export const CLASSROOMS = ROOMS.slice(0, 40).map((r, i) => withDoor(r, RC[i][1]));
+export const FEET = { ground: G, corridor: V0, floor: (f) => (f === 0 ? V0 : floorY(f) + 0.03) };

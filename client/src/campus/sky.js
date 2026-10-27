@@ -141,7 +141,7 @@ export function createSky(renderer, scene, { shadowSize = 2048, flare = true } =
    * The sun rises in the east, stands high at noon and sets golden in the west.
    * Returns { warm, lights } — how evening-coloured the light is and how much the lamps are on.
    */
-  const apply = (minutes, { rebuildEnv = true } = {}) => {
+  const apply = (minutes, { rebuildEnv = true, envDeg = 1.5 } = {}) => {
     const A = TIMES.morning;
     const B = TIMES.evening;
     const h = minutes / 60;
@@ -176,7 +176,7 @@ export function createSky(renderer, scene, { shadowSize = 2048, flare = true } =
     cloudMat.uniforms.uLit.value.set(A.cloud).lerp(C(B.cloud), k);
     cloudMat.uniforms.uShade.value.set(A.cloudShade).lerp(C(B.cloudShade), k);
 
-    if (rebuildEnv && (Math.abs(el - lastEl) > 1.5 || Math.abs(warm - lastW) > 0.03)) {
+    if (rebuildEnv && (Math.abs(el - lastEl) > envDeg || Math.abs(warm - lastW) > 0.02 * envDeg)) {
       lastEl = el;
       lastW = warm;
       const rt = pmrem.fromScene(envScene, 0.02, 1, 2000);

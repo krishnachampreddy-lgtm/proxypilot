@@ -5,11 +5,11 @@
 */
 
 export const PROFILES = {
-  ultra: { name: 'ultra', crowd: 220, peopleLod: 0.4, crowdLod: 0.2, branch: 1, dpr: 1.5, ao: 'Medium', aoHalf: false, bloom: true, aa: 'smaa', shadow: 4096, shadowEvery: 1, grass: 42000, farTrees: 260, nearLeaves: 1.25, walkers: 24, traffic: 14, townShadows: true, farTown: 1400 },
-  high: { name: 'high', crowd: 170, peopleLod: 0.3, crowdLod: 0.14, branch: 0.75, dpr: 1.25, ao: 'Low', aoHalf: true, bloom: true, aa: 'smaa', shadow: 2048, shadowEvery: 1, grass: 20000, farTrees: 160, nearLeaves: 0.9, walkers: 20, traffic: 12, townShadows: false, farTown: 1100 },
-  medium: { name: 'medium', crowd: 120, peopleLod: 0.2, crowdLod: 0.1, branch: 0.5, dpr: 1.0, ao: null, bloom: true, aa: 'fxaa', shadow: 2048, shadowEvery: 2, grass: 0, farTrees: 70, nearLeaves: 0.6, walkers: 16, traffic: 8, townShadows: false, farTown: 800 },
-  low: { name: 'low', crowd: 64, peopleLod: 0.14, crowdLod: 0.07, branch: 0.4, dpr: 0.85, ao: null, bloom: false, aa: 'fxaa', shadow: 1024, shadowEvery: 3, grass: 0, farTrees: 30, nearLeaves: 0.45, walkers: 12, traffic: 6, townShadows: false, farTown: 420 },
-  still: { name: 'still', crowd: 220, peopleLod: 0.5, crowdLod: 0.3, branch: 1, dpr: 1, ao: 'Ultra', aoHalf: false, bloom: true, aa: 'smaa', shadow: 4096, shadowEvery: 1, grass: 42000, farTrees: 260, nearLeaves: 1.25, walkers: 24, traffic: 14, townShadows: true, farTown: 1400 },
+  ultra: { name: 'ultra', perClass: 34, students: 1360, crowdFar: 0.02, lodRadius: 40, envEvery: 1.5, envDeg: 1.5, crowd: 220, peopleLod: 0.4, crowdLod: 0.2, branch: 1, dpr: 1.5, ao: 'Medium', aoHalf: false, bloom: true, aa: 'smaa', shadow: 4096, shadowEvery: 1, grass: 42000, farTrees: 260, nearLeaves: 1.25, walkers: 18, traffic: 14, townShadows: true, farTown: 1400 },
+  high: { name: 'high', perClass: 30, students: 1200, crowdFar: 0.018, lodRadius: 32, envEvery: 2, envDeg: 2, crowd: 170, peopleLod: 0.3, crowdLod: 0.14, branch: 0.75, dpr: 1.25, ao: 'Low', aoHalf: true, bloom: true, aa: 'smaa', shadow: 2048, shadowEvery: 1, grass: 20000, farTrees: 160, nearLeaves: 0.9, walkers: 16, traffic: 12, townShadows: false, farTown: 1100 },
+  medium: { name: 'medium', perClass: 26, students: 1040, crowdFar: 0.016, lodRadius: 20, envEvery: 4, envDeg: 4, crowd: 120, peopleLod: 0.2, crowdLod: 0.1, branch: 0.5, dpr: 1.0, ao: null, bloom: true, aa: 'fxaa', shadow: 2048, shadowEvery: 2, grass: 0, farTrees: 70, nearLeaves: 0.45, walkers: 14, traffic: 6, townShadows: false, farTown: 800 },
+  low: { name: 'low', perClass: 15, students: 600, crowdFar: 0.014, lodRadius: 16, envEvery: 6, envDeg: 6, crowd: 64, peopleLod: 0.14, crowdLod: 0.07, branch: 0.4, dpr: 0.85, ao: null, bloom: false, aa: 'fxaa', shadow: 1024, shadowEvery: 3, grass: 0, farTrees: 30, nearLeaves: 0.45, walkers: 10, traffic: 6, townShadows: false, farTown: 420 },
+  still: { name: 'still', perClass: 30, students: 1200, crowdFar: 0.02, lodRadius: 40, envEvery: 1.5, envDeg: 1.5, crowd: 220, peopleLod: 0.5, crowdLod: 0.3, branch: 1, dpr: 1, ao: 'Ultra', aoHalf: false, bloom: true, aa: 'smaa', shadow: 4096, shadowEvery: 1, grass: 42000, farTrees: 260, nearLeaves: 1.25, walkers: 18, traffic: 14, townShadows: true, farTown: 1400 },
 };
 
 /** Picks a profile from the graphics chip, screen and memory. `?q=ultra|high|medium|low` forces one. */
@@ -70,8 +70,11 @@ export class Governor {
         this.dpr = Math.max(this.minDpr, this.dpr - (fps < 25 ? 0.2 : 0.1));
         this.onChange({ dpr: this.dpr });
       } else {
-        this.step++;
-        this.onChange({ step: this.step });
+        // the next thing to switch off; if it was already off, keep going down the list
+        for (let tries = 0; tries < 8; tries++) {
+          this.step++;
+          if (this.onChange({ step: this.step }) !== false) break;
+        }
       }
     } else if (fps > 57) {
       this.goodStreak++;

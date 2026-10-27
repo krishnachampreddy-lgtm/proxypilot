@@ -210,7 +210,7 @@ export function buildGrounds(scene, B, M, L, rng, P) {
   B.box(54, 0.08, 33, 'pavers', 0, 0, -8.5); // assembly courtyard
   B.box(9, 0.08, 23, 'pavers', 0, 0, 20.5); // main drive to the porch
   B.box(5, 0.08, 4, 'pavers', 0, 0, 7); // porch apron
-  B.box(44, 0.06, 18.6, 'asphalt', 28, 0, 30.6); // bus bay (two rows of buses, nose toward the gate)
+  B.box(44, 0.06, 20.4, 'asphalt', 28, 0, 31.2); // bus bay: four drive-through bays and an entry lane along the wall
   B.box(10.5, 0.065, 15, 'asphalt', 9.75, 0, 34.5); // driveway from the gate into the bus bay
   B.box(31, 0.06, 7.4, 'asphalt', -21, 0, 36.3); // staff car park
   B.box(4, 0.065, 6, 'asphalt', -5.5, 0, 38.5);
@@ -219,7 +219,13 @@ export function buildGrounds(scene, B, M, L, rng, P) {
   B.box(12, 0.08, 3, 'pavers', -40, 0, 14);
   B.box(3, 0.08, 40, 'pavers', 46, 0, -14); // path to playground
   // painted bays for buses and cars
-  for (const z of [29.5, 22.2, 36.9]) B.box(30, 0.01, 0.12, 'line', 30, 0.065, z);
+  // bay dividers, a stop line at the front of each bay, and arrows on the entry lane
+  for (const z of [23.4, 27.0, 30.6, 34.2, 37.8]) B.box(30, 0.01, 0.12, 'line', 31, 0.065, z);
+  for (const z of [25.2, 28.8, 32.4, 36.0]) B.box(0.25, 0.01, 3.2, 'line', 24.4, 0.066, z);
+  for (const x of [16, 28, 40]) {
+    B.box(2.2, 0.01, 0.18, 'line', x, 0.066, 39.6);
+    B.add(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(x + 1.1, 0.067, 39.05), new THREE.Vector3(x + 2.1, 0.067, 39.6), new THREE.Vector3(x + 1.1, 0.067, 40.15)]).setIndex([0, 2, 1]), 'line');
+  }
   for (const x of [-30, -26, -22, -18]) B.box(0.1, 0.01, 4.4, 'line', x, 0.065, 34.8);
 
   // flower beds edged with painted bricks along the drive
@@ -431,7 +437,7 @@ export function buildGrounds(scene, B, M, L, rng, P) {
     B.box(0.12, 0.45, 0.4, 'concrete', x + Math.cos(ry) * 0.75, 0, z - Math.sin(ry) * 0.75, { ry });
     B.box(0.12, 0.45, 0.4, 'concrete', x - Math.cos(ry) * 0.75, 0, z + Math.sin(ry) * 0.75, { ry });
   };
-  for (const [x, z, r] of [[-22, -18, Math.PI / 2], [-22, -6, Math.PI / 2], [22, -18, -Math.PI / 2], [22, -6, -Math.PI / 2], [-12, 4, 0], [12, 4, 0], [56, 10, Math.PI / 2], [56, -10, Math.PI / 2], [56, -30, Math.PI / 2]]) bench(x, z, r);
+  for (const [x, z, r] of [[-24.8, -18, Math.PI / 2], [-25.2, -11, Math.PI / 2], [24.8, -18, -Math.PI / 2], [25.2, -11, -Math.PI / 2], [-12, 4, 0], [12, 4, 0], [56, 10, Math.PI / 2], [56, -10, Math.PI / 2], [56, -30, Math.PI / 2]]) bench(x, z, r);
 
   // ---- grass blades on the lawns ----
   const lawns = [

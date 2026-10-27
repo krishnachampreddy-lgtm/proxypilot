@@ -203,7 +203,9 @@ function block(B, name, opts, rng, lit) {
     F.box(L, 0.2, CW + 0.12, 'white', 0, y - 0.2, CD + CW / 2 + 0.06); // slab
     F.box(clen, 0.5, 0.26, 'maroon', cmid, y - 0.7, D - 0.1); // edge beam
   }
-  for (let u = cu0 + 0.2; u <= cu1 - 0.1; u += 3.6) {
+  const colU = opts.columns || [];
+  if (!opts.columns) for (let u = cu0 + 0.2; u <= cu1 - 0.1; u += 3.6) colU.push(u);
+  for (const u of colU) {
     F.box(0.36, ROOFY - PLINTH, 0.36, 'wallShade', u, PLINTH, D - 0.2);
     F.box(0.44, 0.3, 0.44, 'maroon', u, PLINTH, D - 0.2); // column base
   }
@@ -212,14 +214,15 @@ function block(B, name, opts, rng, lit) {
     F.box(clen + 0.06, 0.09, 0.28, 'maroon', cmid, FL[f] + 0.92, D - 0.08);
     rail(F, cu0 + 0.3, cu1 - 0.3, FL[f] + 1.24, D - 0.08);
   }
-  // potted plants along the ground-floor verandah (never in front of a door or a staircase)
-  for (let u = cu0 + 1.9; u < cu1 - 1; u += 3.6) {
-    if (!rng.chance(0.6)) continue;
+  // potted plants along the ground-floor verandah, tucked beside a column (never in front of a door or a staircase)
+  for (const cu of colU) {
+    const u = cu + 0.55;
+    if (u > cu1 - 0.5 || !rng.chance(0.6)) continue;
     const cell = cells.find(([, a, b]) => u > a && u < b);
     if (cell?.[0] === 'stair') continue;
     if (cell?.[0] === 'room' && Math.abs(u - ((cell[1] + cell[2]) / 2 - 2.5)) < 1.4) continue;
-    F.add(new THREE.CylinderGeometry(0.22, 0.16, 0.38, 12), 'pot', u, PLINTH + 0.19, D - 0.45);
-    F.add(new THREE.SphereGeometry(0.32, 10, 8), 'shrub', u, PLINTH + 0.62, D - 0.45, { sy: 0.85 });
+    F.add(new THREE.CylinderGeometry(0.22, 0.16, 0.38, 12), 'pot', u, PLINTH + 0.19, D - 0.42);
+    F.add(new THREE.SphereGeometry(0.3, 10, 8), 'shrub', u, PLINTH + 0.6, D - 0.42, { sy: 0.85 });
   }
 
   // terrace: finish, parapet with coping, tanks
@@ -284,7 +287,11 @@ export function buildSchool(scene, B, M, rng) {
   const lit = (f) => rng.chance(f === 0 ? 0.75 : f === 1 ? 0.6 : 0.45);
 
   // block A (back) — the story classroom is on the 2nd floor, right of the clock tower
-  block(B, 'A', { L: 72, ox: 0, oz: -34, theta: 0, corridorFrom: -29.4, corridorTo: 29.4, story: { u: 10.8, floor: 2 } }, rng, lit);
+  // (its corridor front stops where the wings' corridors join it, so the corners stay open on every floor;
+  // columns stand on the partition lines, clear of the doors and the two staircases)
+  const colA = [];
+  for (let u = -25.2; u <= 25.21; u += 3.6) if (Math.abs(u) > 4) colA.push(u);
+  block(B, 'A', { L: 72, ox: 0, oz: -34, theta: 0, corridorFrom: -27, corridorTo: 27, columns: colA, story: { u: 10.8, floor: 2 } }, rng, lit);
   // wings B (left) and C (right), corridors facing the courtyard
   block(B, 'B', { L: 33, ox: -36, oz: -8.5, theta: Math.PI / 2, endWalls: [true, false] }, rng, lit);
   block(B, 'C', { L: 33, ox: 36, oz: -8.5, theta: -Math.PI / 2, endWalls: [false, true] }, rng, lit);

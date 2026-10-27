@@ -74,12 +74,19 @@ function makeRoom(block, rc, f, kind) {
     door: at(du, CD + 0.5), // just outside the door, in the corridor
     inDoor: at(du, CD - 0.7), // just inside
     corr: at(du, 7.8), // corridor centre line
-    front: at(du, 10.6), // out in the courtyard
+    front: at(du, 10.6), // out in the courtyard (see groundPath for the corner room)
     frontAisle: at(rc - 1.95, AISLE_V), // the space in front of the first row
     hinge: at(du - 0.5, CD - 0.11),
     theta: BLOCKS[block].theta,
     teacher: { p: at(rc - 2.8, AISLE_V + 0.4), heading: headingU(block) },
   };
+  // from the courtyard to the corridor outside a ground-floor door: straight across, except for the
+  // room in the corner of the main block, whose door opens off the corner where the west wing joins
+  r.groundPath = [[r.front[0], G, r.front[1]]];
+  if (block === 'A' && du < -27) {
+    r.front = [-25.4, -23.8];
+    r.groundPath = [[-25.4, G, -23.8], [-28.2, V0, -23.8], [-28.2, V0, -26.2]];
+  }
   if (kind === 'class') {
     r.girls = seatList(block, rc, y, [DESK_COLS[0], DESK_COLS[1]]);
     r.boys = seatList(block, rc, y, [DESK_COLS[2], DESK_COLS[3]]);
@@ -191,7 +198,9 @@ function stairOf(id, block, u0, u1) {
     return [p(uA, 5.7, y0), p(uA, 5.0, y0), p(uA, 1.65, ym), p(uA, 0.95, ym), p(uB, 0.95, ym), p(uB, 1.65, ym), p(uB, 5.0, y1), p(uB, 5.7, y1)];
   };
   const corr = at(um, 7.8);
-  return { id, block, u0, u1, um, uA, uB, corr, ground: at(um, 10.6), up };
+  // the two stairs beside the clock tower are reached round the side of its porch, not through it
+  const yard = block === 'A' && Math.abs(um) < 8 ? [[Math.sign(um) * 6.9, -14.4], [Math.sign(um) * 6.9, -19.6]] : [];
+  return { id, block, u0, u1, um, uA, uB, corr, ground: at(um, 10.6), yard, up };
 }
 
 export const STAIRS = [

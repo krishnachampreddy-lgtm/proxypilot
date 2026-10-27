@@ -381,7 +381,8 @@ export function buildGrounds(scene, B, M, L, rng, P) {
   // ---- campus lamps ----
   const lamps = [];
   for (let z = 12; z <= 25; z += 6.5) lamps.push([-5.2, z], [5.2, z]);
-  lamps.push([-24, 4], [24, 4], [-24, -20], [24, -20], [16, 22], [44, 22], [-46, 16], [-46, -26], [46, 0], [46, -28]);
+  // (the courtyard ones stand against the wings, between the doors, out of everyone's way)
+  lamps.push([-26.3, 3.3], [26.3, 2.0], [-26.3, -17.4], [26.3, -14.7], [16, 22], [44, 22], [-46, 16], [-46, -26], [46, 0], [46, -28]);
   for (const [x, z] of lamps) {
     B.cyl(0.08, 4.4, 'darkMetal', x, 0, z, 8, { r2: 0.05 });
     B.box(0.6, 0.12, 0.3, 'darkMetal', x, 4.4, z);
@@ -468,7 +469,7 @@ export function buildGrounds(scene, B, M, L, rng, P) {
     B.box(0.12, 0.45, 0.4, 'concrete', x + Math.cos(ry) * 0.75, 0, z - Math.sin(ry) * 0.75, { ry });
     B.box(0.12, 0.45, 0.4, 'concrete', x - Math.cos(ry) * 0.75, 0, z + Math.sin(ry) * 0.75, { ry });
   };
-  for (const [x, z, r] of [[-24.8, -18, Math.PI / 2], [-25.2, -11, Math.PI / 2], [24.8, -18, -Math.PI / 2], [25.2, -11, -Math.PI / 2], [-12, 4, 0], [12, 4, 0], [56, 10, Math.PI / 2], [56, -10, Math.PI / 2], [56, -30, Math.PI / 2]]) bench(x, z, r);
+  for (const [x, z, r] of [[-26.15, -20, Math.PI / 2], [-26.15, -11.2, Math.PI / 2], [26.15, -20, -Math.PI / 2], [26.15, -12.8, -Math.PI / 2], [10, 14.8, 0], [16, 14.8, 0], [56, 10, Math.PI / 2], [56, -2, Math.PI / 2], [56, -30, Math.PI / 2]]) bench(x, z, r);
 
   // ---- grass blades on the lawns ----
   const lawns = [

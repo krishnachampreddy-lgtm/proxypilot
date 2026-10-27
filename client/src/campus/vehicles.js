@@ -181,6 +181,7 @@ export class Driver {
     let target = this.max * (1 - Math.min(0.7, bend * 6));
     target = Math.min(target, Math.max(0.8, left * 0.6));
     if (this.hold || this.blocked) target = 0;
+    else if (this.creep) target = Math.min(target, 0.7); // edging through people who won't clear the way
     // brake harder than we accelerate
     this.speed += (target - this.speed) * Math.min(1, dt * (target < this.speed ? 4 : 1.4));
     this.s = Math.min(this.len, this.s + this.speed * dt);
@@ -298,6 +299,7 @@ export function buildVehicles(scene, rng, P) {
   // (its "zone") so people about to step into it wait for it to pass
   let pedestrians = () => [];
   const zones = [];
+  const bodies = [];
   // points along the road a vehicle is about to drive (its own route, so it looks round the bend it's taking)
   const _p = new THREE.Vector3();
   const _t = new THREE.Vector3();
@@ -350,6 +352,29 @@ export function buildVehicles(scene, rng, P) {
     },
     /** the strips in front of moving school vehicles (shared with the people) */
     zones,
+    /** every school vehicle on show, as a box people walk round */
+    bodies,
+    /** true while a school vehicle is turning in or out through the gate (people on foot wait) */
+    gateTurning() {
+      // only while one is actually across the footpath in the gateway (or its nose is about to be)
+      for (const d of fleetList) {
+        if (!d.active || !d.obj.visible) continue;
+        const p = d.obj.position;
+        if (Math.abs(p.x) > 16 || p.z < 36 || p.z > 53) continue;
+        const r = d.obj.rotation.y + (d.reverse ? Math.PI : 0);
+        const fx = Math.sin(r);
+        const fz = Math.cos(r);
+        const hl = d.dims.len / 2;
+        const hw = d.dims.wid / 2 + 0.4;
+        const front = hl + (d.speed > 0.3 ? 2.5 : 0.6);
+        for (const [u, v] of [[front, hw], [front, -hw], [-hl, hw], [-hl, -hw], [0, hw], [0, -hw]]) {
+          const x = p.x + fx * u + fz * v;
+          const z = p.z + fz * u - fx * v;
+          if (Math.abs(x) < 7.5 && z > 43.4 && z < 46.9) return true;
+        }
+      }
+      return false;
+    },
     /** true when no moving road traffic (either way) is about to pass x — a school vehicle waits for that before pulling out */
     roadClear(x) {
       for (const t of traffic) {
@@ -392,7 +417,9 @@ export function buildVehicles(scene, rng, P) {
         const byPeople = d.active && !byVehicle && pedBlock(d);
         // (it takes a moment of nobody in the way to forget it was waiting, so people keep holding back)
         d.pedWait = byPeople ? (d.pedWait || 0) + dt : Math.max(0, (d.pedWait || 0) - dt * 0.5);
-        d.blocked = byVehicle || byPeople;
+        // after a few seconds of waiting for people it edges forward slowly, and they make way
+        d.creep = byPeople && d.pedWait > 5;
+        d.blocked = byVehicle || (byPeople && !d.creep);
       }
       // zones in front of moving school vehicles, for the people on foot
       zones.length = 0;
@@ -408,6 +435,12 @@ export function buildVehicles(scene, rng, P) {
         }
       }
       for (const d of fleetList) d.update(dt);
+      bodies.length = 0;
+      for (const d of fleetList) {
+        if (!d.obj.visible) continue;
+        const r = d.obj.rotation.y;
+        bodies.push({ x: d.obj.position.x, z: d.obj.position.z, fx: Math.sin(r), fz: Math.cos(r), hl: d.dims.len / 2, hw: d.dims.wid / 2 });
+      }
       // keep a safe gap to the vehicle ahead in the same lane and stop for turning buses
       for (const t of traffic) {
         let want = t.speed * (Math.abs(t.x) < 25 ? 0.6 : 1);

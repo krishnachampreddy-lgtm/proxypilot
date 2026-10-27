@@ -12,7 +12,7 @@ import { buildGrounds } from './grounds.js';
 import { buildTown } from './town.js';
 import { buildTrees } from './trees.js';
 import { buildVehicles } from './vehicles.js';
-import { createPeople, setVehicleZones } from './people.js';
+import { createPeople, setVehicleZones, setVehicleBodies, setGateHold } from './people.js';
 import { buildFlag, buildBirds } from './life.js';
 import { createSim, DAY_START } from './sim.js';
 import { PROFILES, pickProfile, Governor } from './quality.js';
@@ -130,19 +130,27 @@ export function createCampus(container, { mode = 'hero', time = 'morning', start
 
   // ---- static world, merged per material ----
   const B = new Batch(M);
+  const TT = (label) => window.__campusDebug && console.log('[people]', label, Math.round(performance.now()));
+  TT('start');
   const school = buildSchool(scene, B, M, rng);
+  TT('school');
   const fans = buildInteriors(B);
+  TT('interiors');
   const grounds = buildGrounds(scene, B, M, L, rng, P);
+  TT('grounds');
   const flag = buildFlag(scene, B, 0, -11);
   // furniture inside never needs to cast sun shadows (the walls and roof already do)
   const INSIDE = ['floorIn', 'deskWood', 'deskMetal', 'dado', 'tube', 'almirah', 'poster', 'notice', 'books', 'screen', 'leather', 'fanWhite', 'kota', ...IM_KEYS];
   B.build(scene, { noCast: ['line', 'tiles', 'pavers', 'asphalt', 'track', 'court', 'courtOut', ...INSIDE] });
+  TT('batched');
   const movers = createMovers(scene, M, fans, grounds.libraryFans);
   const TB = new Batch(M);
   buildTown(TB, M, rng, P);
   TB.build(scene, { castShadow: P.townShadows });
 
+  TT('town');
   const trees = buildTrees(scene, L, rng, { P, merge: (list) => mergeGeometries(list) });
+  TT('trees');
   const vehicles = buildVehicles(scene, rng, P);
   const peopleP = createPeople(scene, L, rng, P, camera);
   const birdsP = still ? Promise.resolve(null) : buildBirds(scene, L, rng, { count: P.name === 'low' ? 6 : 12 }).catch(() => null); // birds are a nice extra, never a blocker
@@ -451,6 +459,7 @@ export function createCampus(container, { mode = 'hero', time = 'morning', start
     if (gs) gs.uniforms.uTime.value = elapsed;
     flag.update(elapsed);
     vehicles.update(dt);
+    setGateHold(vehicles.gateTurning());
     if (people) {
       people.posed.update(elapsed);
       movers.update(dt, [people.crowd.agents, people.pool.agents], (room) => sim?.busy(room));
@@ -513,15 +522,38 @@ export function createCampus(container, { mode = 'hero', time = 'morning', start
     // vehicles and people on foot look out for each other
     vehicles.setPedestrians(() => [people.crowd.agents, people.pool.agents]);
     setVehicleZones(vehicles.zones);
+    setVehicleBodies(vehicles.bodies);
+    const T = (label) => window.__campusDebug && console.log('[people]', label, Math.round(performance.now()));
     sim = createSim({ people, vehicles, grounds, scene, rng, onBell });
     sim.onClock((m, ph) => onClock?.(m, ph));
     sim.jumpTo(minutesNow);
+    T('sim');
     if (mode === 'hod') sim.setSpeed(1 / 60); // the HOD sees the school at the real time
     await L.done();
+    T('textures');
     if (!running) return;
-    renderer.compile(scene, camera);
+    // compile every shader before the first frame (in the background where the browser can), with the
+    // hidden people and parts shown for a moment so theirs are ready too: no stutter later in the day
+    const hidden = [];
+    scene.traverse((o) => {
+      if (!o.visible) {
+        hidden.push(o);
+        o.visible = true;
+      }
+    });
+    try {
+      await renderer.compileAsync(scene, camera);
+    } catch {
+      renderer.compile(scene, camera);
+    }
+    for (const o of hidden) o.visible = false;
+    if (!running) return;
+    T('compiled programs ' + renderer.info.programs.length);
     ready = true;
-    for (let i = 0; i < 3; i++) frame(1 / 60);
+    for (let i = 0; i < 3; i++) {
+      frame(1 / 60);
+      T('frame ' + i + ' programs ' + renderer.info.programs.length);
+    }
     renderer.domElement.style.opacity = '1';
     onReady?.(true);
   });
@@ -554,6 +586,17 @@ export function createCampus(container, { mode = 'hero', time = 'morning', start
       return governor.fps;
     },
     /** who is standing in front of a vehicle (testing) */
+    debugFleet() {
+      const out = [];
+      for (const [kind, list] of Object.entries(vehicles.fleet)) {
+        list.forEach((d, i) => {
+          if (!d.obj.visible) return;
+          const by = d.blockedBy ? Object.entries(vehicles.fleet).map(([k, l]) => (l.indexOf(d.blockedBy) >= 0 ? k + l.indexOf(d.blockedBy) : '')).join('') || 'traffic' : '';
+          out.push([kind + i, +d.obj.position.x.toFixed(1), +d.obj.position.z.toFixed(1), +d.obj.rotation.y.toFixed(2), +d.speed.toFixed(1), d.active ? 1 : 0, d.blocked ? 1 : 0, +(d.pedWait || 0).toFixed(1), by, d.hold ? 1 : 0, d.stopped ? 1 : 0]);
+        });
+      }
+      return out;
+    },
     debugBlockers(kind = 'buses', i = 0) {
       const d = vehicles.fleet[kind][i];
       if (!d) return null;
@@ -572,6 +615,29 @@ export function createCampus(container, { mode = 'hero', time = 'morning', start
         }
       }
       return { bus: [d.obj.position.x, d.obj.position.z], blocked: d.blocked, ped: d.pedWait, speed: d.speed, zones: vehicles.zones.map((z) => [+z.x.toFixed(1), +z.z.toFixed(1), +z.fx.toFixed(2), +z.fz.toFixed(2), z.back, +z.front.toFixed(1), z.half, z.path, z.nose]), out: out.slice(0, 6) };
+    },
+    /** everyone and everything that moves, compactly (for the audit script) */
+    debugAll() {
+      const pk = (a, sys) => {
+        const g = a.path?.[a.seg];
+        return [sys, +a.pos.x.toFixed(2), +a.pos.y.toFixed(2), +a.pos.z.toFixed(2), a.tag || '-', a.kind, g ? +g.x.toFixed(1) : null, g ? +g.z.toFixed(1) : null, a.path ? a.path.length - a.seg : 0, +(a.wait || 0).toFixed(1), +(a.holdT || 0).toFixed(1), a.i, a.talk ? 1 : 0];
+      };
+      const out = [];
+      for (const a of people?.crowd.agents || []) if (a.active) out.push(pk(a, 'c'));
+      for (const a of people?.pool.agents || []) if (a.active) out.push(pk(a, 'p'));
+      return {
+        m: sim?.minutes,
+        phase: sim?.phase?.id,
+        agents: out,
+        fp: vehicles.footprints(),
+        doors: movers.doors.map((d) => +d.open.toFixed(2)),
+        seated: CLASSROOMS.map((_, i) => sim?.seated(i)),
+      };
+    },
+    /** one student's whole route (testing) */
+    debugPath(i) {
+      const a = people?.crowd.agents[i];
+      return a && { seg: a.seg, tag: a.tag, data: a.data && { cls: a.data.cls }, pos: a.pos.toArray().map((v) => +v.toFixed(2)), path: a.path?.map((p) => [+p.x.toFixed(2), +p.y.toFixed(2), +p.z.toFixed(2), p.exact ? 'E' : p.narrow ? 'N' : ''].join(' ')) };
     },
     /** a walking student with a bag (testing) */
     findWalker(tag = 'arriving') {
@@ -635,6 +701,7 @@ export function createCampus(container, { mode = 'hero', time = 'morning', start
         let b = performance.now();
         t.sim += b - a;
         vehicles.update(1 / 60);
+        setGateHold(vehicles.gateTurning());
         a = performance.now();
         t.veh += a - b;
         people.posed.update(i / 60);
@@ -654,6 +721,7 @@ export function createCampus(container, { mode = 'hero', time = 'morning', start
       for (let t = 0; t < seconds; t += 1 / 30) {
         sim?.update(1 / 30);
         vehicles.update(1 / 30);
+        setGateHold(vehicles.gateTurning());
       }
       minutesNow = sim?.minutes ?? minutesNow;
       if (still) sim?.setPaused(true);

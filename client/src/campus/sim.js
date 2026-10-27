@@ -32,6 +32,8 @@ const E = (x, z, y = FEET.ground) => Object.assign(new THREE.Vector3(x, y, z), {
 /** a point where friends walking together squeeze up (stairs, doorways, the gap between buses) */
 const NW = (x, z, y = FEET.ground) => Object.assign(new THREE.Vector3(x, y, z), { narrow: true });
 const P3 = ([x, y, z], flags = { narrow: true }) => Object.assign(new THREE.Vector3(x, y, z), flags);
+/** a point in a corridor or on the footpath: friends keep closer together there (squeeze = share of their usual spacing) */
+const SQ = (x, z, y = FEET.ground, squeeze = 0.5) => Object.assign(new THREE.Vector3(x, y, z), { squeeze });
 // friends walking side by side: how far each one keeps to the right of the shared route
 const LAT = { 1: [0], 2: [-0.36, 0.36], 3: [-0.62, 0, 0.62], 4: [-0.78, -0.26, 0.26, 0.78], 5: [-0.9, -0.45, 0, 0.45, 0.9] };
 const hm = (h, m = 0) => h * 60 + m;
@@ -82,8 +84,8 @@ const LUNCH_AREAS = [
 const COURT = { x0: -68, x1: -56, z0: -9, z1: 15 };
 // the wings are solid buildings: to reach the playground (east) or the court (west), go out of the
 // courtyard past the front end of the wing, along the outside, then down the path
-const EAST_OUT = [V(25.4, 7.2), V(27.5, 10.6), V(38, 11), V(45, 9), V(47.6, 2), V(47.6, -8)];
-const WEST_OUT = [V(-25.4, 7.2), V(-27.5, 10.6), V(-38, 11), V(-45, 9), V(-50, 6)];
+const EAST_OUT = [V(25.4, 7.2), V(27.5, 11.2), V(38, 11.4), V(45, 9.4), V(47.6, 2), V(47.6, -8)];
+const WEST_OUT = [V(-25.4, 7.2), V(-27.5, 11.2), V(-38, 11.4), V(-45, 9.4), V(-50, 6)];
 const PITCH = { x0: 74, x1: 96, z0: -54, z1: -6 };
 
 // assembly: every class stands in its own pair of lines (boys and girls), facing the flag
@@ -96,6 +98,10 @@ const slotXZ = (cls, kind, row) => [lineX(cls) + (kind === 'boy' ? -0.27 : 0.27)
 const laneX = (cls, kind) => lineX(cls) + (kind === 'boy' ? -0.56 : 0.56);
 const LINES_FRONT = -9.5;
 const LINES_BACK = 1.0;
+const FLAG_CLEAR = 2.7; // half the flag platform plus room to pass
+// the lines fill the middle of the courtyard (x ±23, z -8 to 0): to get from the front to the back
+// you walk round the end of them
+const LINES_X = 23.6;
 
 export function createSim({ people, vehicles, grounds, scene, rng, onBell }) {
   const { pool, assembly, crowd, posed } = people;
@@ -215,37 +221,60 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell }) {
     for (let k = 0; k < f; k++) for (const p of st.up(k)) out.push(P3(p));
     return out;
   };
-  const corridor = (from, to, y) => corridorPath(from, to, y).map((p) => V(p[0], p[2], p[1]));
+  const corridor = (from, to, y) => corridorPath(from, to, y).map((p) => SQ(p[0], p[2], p[1]));
+  const yardIn = (st) => st.yard.map(([x, z]) => V(x, z));
   /** from the courtyard to just outside a room's door */
   const toDoor = (room) => {
-    if (room.floor === 0) return [V(room.front[0], room.front[1]), NW(room.door[0], room.door[1], room.feet)];
+    if (room.floor === 0) return [...room.groundPath.map(([x, y, z]) => (y > 0.3 ? SQ(x, z, y) : V(x, z, y))), NW(room.door[0], room.door[1], room.feet)];
     const st = STAIRS[room.stair];
     return [
+      ...yardIn(st),
       V(st.ground[0], st.ground[1]),
       NW(st.corr[0], st.corr[1], FEET.corridor),
       ...climb(st, room.floor),
-      V(st.corr[0], st.corr[1], room.feet),
+      SQ(st.corr[0], st.corr[1], room.feet),
       ...corridor(st.corr, room.corr, room.feet),
       NW(room.door[0], room.door[1], room.feet),
     ];
   };
   /** from just outside a room's door down to the courtyard */
   const fromDoor = (room) => {
-    if (room.floor === 0) return [V(room.front[0], room.front[1])];
+    if (room.floor === 0) return room.groundPath.slice().reverse().map(([x, y, z]) => (y > 0.3 ? SQ(x, z, y) : V(x, z, y)));
     const st = STAIRS[room.stair];
     return [
-      V(room.corr[0], room.corr[1], room.feet),
+      SQ(room.corr[0], room.corr[1], room.feet),
       ...corridor(room.corr, st.corr, room.feet),
       ...climb(st, room.floor).reverse(),
       NW(st.corr[0], st.corr[1], FEET.corridor),
       V(st.ground[0], st.ground[1]),
+      ...yardIn(st).reverse(),
     ];
   };
   /** in through the door, along the front of the class, down the aisle to the desk */
   const intoSeat = (room, s) => [E(room.inDoor[0], room.inDoor[1], room.feet), E(room.frontAisle[0], room.frontAisle[1], room.feet), E(s.aisle[0], s.aisle[1], room.feet), E(s.row[0], s.row[1], room.feet), E(s.x, s.z, room.feet)];
   const outOfSeat = (room, s) => [E(s.row[0], s.row[1], room.feet), E(s.aisle[0], s.aisle[1], room.feet), E(room.frontAisle[0], room.frontAisle[1], room.feet), E(room.inDoor[0], room.inDoor[1], room.feet), NW(room.door[0], room.door[1], room.feet)];
   /** where a room's people come out into the courtyard */
-  const courtyardOf = (room) => (room.floor === 0 ? room.front : STAIRS[room.stair].ground);
+  const courtyardOf = (room) => {
+    if (room.floor === 0) return room.front;
+    const st = STAIRS[room.stair];
+    return st.yard.length ? st.yard[0] : st.ground;
+  };
+  /** somewhere for a group of friends to wait for each other: near where they come out, a little way into the courtyard */
+  const meetSpot = (room) => {
+    const [x, z] = courtyardOf(room);
+    const ang = rng() * Math.PI * 2;
+    const r = 1.6 + rng() * 2.2;
+    // (towards the middle of the courtyard, never back into the building)
+    const tx = x + (Math.sign(-x) || 1) * (1.2 + Math.abs(Math.cos(ang)) * r);
+    const tz = z + Math.sin(ang) * r + (z < -20 ? 2 : 0);
+    return [Math.max(-23.5, Math.min(23.5, tx)), Math.max(-19.5, Math.min(7.5, tz))];
+  };
+  const inBuilding = (p) => p.y > 0.3 || (Math.abs(p.x) < 36 && p.z > -34 && p.z < 8 && (p.z < -25 || Math.abs(p.x) > 27));
+  /** change someone's plan: at once if they're outside, or as soon as they come out if they're still in the building */
+  const reroute = (a, fn) => {
+    if (inBuilding(a.pos)) a.onArrive = (b) => fn(b);
+    else fn(a);
+  };
 
   const gathering = () => minutes >= hm(7, 58) && minutes < hm(8, 28);
   /**
@@ -258,7 +287,7 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell }) {
     const s = reserveSeat(cls, a.kind);
     const path = [...from, ...toDoor(room)];
     const holdAt = opts.queue ? { [path.length - 1]: opts.queue * 0.75 } : null;
-    a.data = { ...(a.data || {}), cls };
+    a.data = { ...(a.data || {}), cls, seat: s };
     if (!s) {
       route(a, path, { ...opts, holdAt, onArrive: release }); // (never happens: every class has spare desks)
       return;
@@ -267,6 +296,7 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell }) {
       ...opts,
       holdAt,
       onArrive: (b) => {
+        if (b.data) b.data.seat = null;
         if (gathering() && phase?.id !== 'arrival') {
           // the assembly bell went while they were on the way: straight back out to the line
           s.state = 0;
@@ -341,7 +371,7 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell }) {
       while (left > 0) {
         const n = Math.min(left, groupSize());
         left -= n;
-        const grp = newGroup(courtyardOf(CLASSROOMS[cls]), n, (members) => go(members, cls));
+        const grp = newGroup(meetSpot(CLASSROOMS[cls]), n, (members) => go(members, cls));
         for (let k = 0; k < n; k++) {
           soon(t, () => {
             const a = leaveClass(cls, { pace: 1.3, ...opts }, (b) => meet(grp, b), kind);
@@ -449,15 +479,29 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell }) {
     a.heading = Math.PI;
     lineAgents.push(a);
   };
+  /** coming from the front of the courtyard to a middle lane at the back: round the end of the lines */
+  const behindLines = (a, via, lx) => {
+    const from = via.length ? via[via.length - 1] : a.pos;
+    if (from.z > -4 || from.y > 0.3) return [];
+    const sx = Math.sign(from.x || lx || 1);
+    return [V(sx * LINES_X, Math.min(from.z, -9.8)), V(sx * LINES_X, 2.4)];
+  };
+  /** from the back of the lines to somewhere at the front: round the end of them */
+  const aroundLines = (lx, [x, z]) => {
+    if (z > -4) return [];
+    const sx = Math.sign(x || lx || 1);
+    return [V(sx * LINES_X, 2.4), V(sx * LINES_X, -9.8)];
+  };
   /** walk from wherever the student is to their place in the class line (up the gap beside the line) */
   const walkToLine = (a, cls, via = []) => {
     const slot = takeSlot(cls, a.kind);
     a.tag = 'toLine';
     a.data = { cls, row: slot.row };
     const lx = laneX(cls, a.kind);
-    const fromFront = (via.length ? via[via.length - 1].z : a.pos.z) < -4;
+    // (the middle lanes start right by the flag platform: those always come in from the back)
+    const fromFront = (via.length ? via[via.length - 1].z : a.pos.z) < -4 && Math.abs(lx) > FLAG_CLEAR;
     const end = fromFront ? LINES_FRONT : LINES_BACK;
-    route(a, [...via, V(lx, end + (fromFront ? -1.2 : 1.2)), E(lx, end), E(lx, slot.z), V(slot.x, slot.z)], {
+    route(a, [...via, ...(fromFront ? [] : behindLines(a, via, lx)), E(lx, end + (fromFront ? -1.2 : 1.2)), E(lx, end), E(lx, slot.z), E(slot.x, slot.z)], {
       pace: 1.35,
       run: a.run,
       onArrive: (b) => {
@@ -509,7 +553,7 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell }) {
     const lat = LAT[n];
     for (let k = 0; k < n; k++) arriveToSchool(start, via, true, { cls, lat: lat[k], k, kind });
   };
-  const walkerFrom = (side) => [V(side * (30 + rng() * 34), 45.1), [V(side * 2.4, 45.1), ...GATE_IN]];
+  const walkerFrom = (side) => [SQ(side * (30 + rng() * 34), 45.45, FEET.ground, 0.45), [SQ(side * 2.4, 45.45, FEET.ground, 0.45), ...GATE_IN]];
 
   let walkSchedule = [];
   const WALK_SPEED = 1.5; // metres a second for a group walking in (see evenPace)
@@ -526,8 +570,10 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell }) {
     while (left > 0) {
       const n = Math.min(left, groupSize());
       left -= n;
-      const u = (rng() + rng()) / 2;
-      list.push({ t: hm(7, 15.3) + u * 22, n });
+      const u = (rng() + rng() + rng()) / 3;
+      // (the campus clock runs fast in the morning, so if everyone came in by the front gate the drive would be
+      // packed solid: most come in by the side gate behind the library and are simply found at their desks)
+      list.push({ t: hm(7, 13.5) + u * 34, n, unseen: rng() < 0.62 });
     }
     walkSchedule = list.filter((g) => g.t >= fromMinute).sort((x, y) => y.t - x.t); // popped from the end, earliest first
     if (!jumping) return 0;
@@ -535,9 +581,13 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell }) {
     const speed = phaseAt(fromMinute).speed; // campus minutes per real second
     for (const g of list) {
       if (g.t >= fromMinute) continue;
+      if (g.unseen) {
+        seated += g.n;
+        continue;
+      }
       const dist = ((fromMinute - g.t) / speed) * WALK_SPEED;
       const side = rng() < 0.5 ? -1 : 1;
-      const pts = [V(side * (30 + rng() * 34), 45.1), V(side * 2.4, 45.1), ...GATE_IN];
+      const pts = [SQ(side * (30 + rng() * 34), 45.45, FEET.ground, 0.45), SQ(side * 2.4, 45.45, FEET.ground, 0.45), ...GATE_IN];
       // where along the way in they'd be by now
       let d = dist;
       let i = 0;
@@ -595,7 +645,7 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell }) {
     setOff(c, carIn(CAR_SLOTS[i]), {
       max: 9,
       onEnd: () => {
-        const t = pool.spawn([V(CAR_SLOTS[i] - 1, 36.4), V(-8, 33), V(-1.4, 26), V(-1, 12), V(-14, -1)], { teacher: true });
+        const t = pool.spawn([V(CAR_SLOTS[i] - 1.45, 35.4), V(CAR_SLOTS[i] - 1.6, 33.4), V(-8, 33), V(-1.4, 26), V(-1, 12), V(-14, -1)], { teacher: true });
         if (t) t.onArrive = (b) => toStaffRoom(b);
       },
     });
@@ -679,7 +729,7 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell }) {
     const inside = a.pos.z < 43;
     // from the bus bay, back down the aisle first (never between the buses)
     const fromBay = a.pos.x > 3 && a.pos.z > 22 && a.pos.z < 40 ? [V(3.6, a.pos.z)] : [];
-    return [...from, ...fromBay, ...(inside ? [V(-1.9, Math.max(30, Math.min(a.pos.z, 40))), V(-2.2, 43.2)] : []), V(side * 2.4, 45.1), V(side * (42 + rng() * 26), 45.1)];
+    return [...from, ...fromBay, ...(inside ? [V(-1.9, Math.max(30, Math.min(a.pos.z, 40))), V(-2.2, 43.2)] : []), SQ(side * 2.4, 45.45, FEET.ground, 0.45), SQ(side * (42 + rng() * 26), 45.45, FEET.ground, 0.45)];
   };
   const walkHome = (a, from = [], side = rng() < 0.5 ? -1 : 1) => {
     a.tag = 'walkHome';
@@ -741,10 +791,10 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell }) {
   const makeLunchSpots = () => {
     const out = [];
     for (const A of LUNCH_AREAS) {
-      for (let x = A.x0; x <= A.x1; x += 4.6) {
-        for (let z = A.z0; z <= A.z1; z += 4.6) {
-          const px = x + (rng() - 0.5) * 2;
-          const pz = z + (rng() - 0.5) * 2;
+      for (let x = A.x0; x <= A.x1; x += 4.0) {
+        for (let z = A.z0; z <= A.z1; z += 4.0) {
+          const px = x + (rng() - 0.5) * 1.4;
+          const pz = z + (rng() - 0.5) * 1.4;
           if (A.not?.(px, pz)) continue;
           out.push([px, pz]);
         }
@@ -752,12 +802,21 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell }) {
     }
     lunchSpots = out.sort(() => rng() - 0.5);
   };
-  const takeSpot = () => lunchSpots.pop() || [(rng() < 0.5 ? -1 : 1) * (8 + rng() * 12), -18 + rng() * 18];
+  const takeSpot = () => lunchSpots.pop() || [(rng() < 0.5 ? -1 : 1) * (9 + rng() * 11), -18 + rng() * 16];
+  /** from inside the courtyard out to a place on the lawns (through the front opening or a gap in the hedge) */
+  const fromYard = ([x, z]) => {
+    if (z < 9) return [];
+    if (Math.abs(x) < 9) return [V(x * 0.4, 7.4), V(x * 0.6, 11)];
+    if (Math.abs(x) < 20) return [V(Math.sign(x) * 5, 7.4), V(Math.sign(x) * 6, 11)];
+    return [V(Math.sign(x) * 25.4, 7.2), V(Math.sign(x) * 27.4, 11.2)];
+  };
+  /** and back in again */
+  const toYard = (p) => fromYard([p.x, p.z]).reverse();
   const chatCircle = (members, spot) => {
     const n = members.length;
     const r = 0.36 + n * 0.1;
     const spin = rng() * 6;
-    walkTogether(members, [V(spot[0], spot[1])], { pace: 1.0 }, (b, k) => {
+    walkTogether(members, [...fromYard(spot), V(spot[0], spot[1])], { pace: 1.0 }, (b, k) => {
       const ang = spin + (k / n) * Math.PI * 2;
       const x = spot[0] + Math.cos(ang) * r;
       const z = spot[1] + Math.sin(ang) * r;
@@ -823,9 +882,17 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell }) {
     ballState.pos.set(85, 0.12, -30);
     ballState.vel.set(0, 0, 0);
     ballState.players = [];
+    // (they come down one after another, not all in one heap)
     for (let i = 0; i < n; i++) {
-      const a = pool.spawn([...stairOut(C_STAIR), ...EAST_OUT, randIn(PITCH)], { teacher: false, tag: 'football' });
-      if (a) ballState.players.push(a);
+      later(i * 1.1, () => {
+        if (!ball.visible) return;
+        const a = pool.spawn([...stairOut(C_STAIR), ...EAST_OUT, randIn(PITCH)], { teacher: false, tag: 'football' });
+        if (a) {
+          a.onPitch = false;
+          a.onArrive = (b) => (b.onPitch = true);
+          ballState.players.push(a);
+        }
+      });
     }
   };
   /** players go back into the building, round the front of the east (or west) wing and up the stairs */
@@ -917,7 +984,7 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell }) {
         fillLines(1);
       }
       // the PT teacher walks down the middle aisle and back
-      pool.spawn([V(0, -9.6), V(0, -0.2), V(0.3, -9.4)], { teacher: true, tag: 'aisle', onArrive: release, pace: 0.8 });
+      pool.spawn([V(0, -8.3), V(0, -0.2), V(0.3, -8.3)], { teacher: true, tag: 'aisle', onArrive: release, pace: 0.8 });
       // anyone still on the way hurries
       for (const a of crowd.agents) if (a.active && a.tag === 'toLine') a.run = true;
     }
@@ -935,18 +1002,24 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell }) {
         a.tag = 'toClass';
         const lx = laneX(cls, a.kind);
         const room = CLASSROOMS[cls];
-        const toFront = courtyardOf(room)[1] < -4;
+        const toFront = courtyardOf(room)[1] < -4 && Math.abs(lx) > FLAG_CLEAR;
         const end = toFront ? LINES_FRONT : LINES_BACK;
-        later((maxRow - row) * 1.2 + rng() * 1.0, () => a.active && goToClass(a, cls, [E(lx, a.pos.z), E(lx, end), V(lx, end + (toFront ? -1.2 : 1.2))], { pace: 1.3 }));
+        later((maxRow - row) * 1.2 + rng() * 1.0, () => a.active && goToClass(a, cls, [E(lx, a.pos.z), E(lx, end), E(lx, end + (toFront ? -1.2 : 1.2)), ...(toFront ? [] : aroundLines(lx, courtyardOf(room)))], { pace: 1.3 }));
       }
-      for (const a of crowd.agents) if (a.active && (a.tag === 'toLine' || a.tag === 'arriving')) goToClass(a, a.data?.cls ?? 0, [], { pace: 1.3 });
+      // anyone still on the way to the lines turns round (once they're out of the building); anyone already
+      // heading for their desk just carries on
+      for (const a of crowd.agents) {
+        if (!a.active || (a.tag !== 'toLine' && a.tag !== 'arriving') || a.data?.seat) continue;
+        a.tag = 'toClass';
+        reroute(a, (b) => b.active && goToClass(b, b.data?.cls ?? 0, [], { pace: 1.3 }));
+      }
       lineAgents = [];
     }
     if (p.id === 'classes') {
       if (!fresh) fillSeats(1, PE_CLASS);
       // a PE class comes down to the track and runs laps
       for (let k = 0; k < perClass; k++) {
-        const lapAt = (k * 2) % trackLap.length;
+        const lapAt = Math.floor((k * trackLap.length) / perClass) % trackLap.length;
         if (!fresh) {
           const a = crowd.spawn([trackLap[lapAt]], { jitterStart: false, tag: 'pe' });
           if (a) {
@@ -1002,7 +1075,7 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell }) {
             const n = Math.min(out, 2 + Math.floor(rng() * 4));
             out -= n;
             const kind = rng() < 0.5 ? 'boy' : 'girl';
-            const grp = newGroup(courtyardOf(CLASSROOMS[c]), n, (members) => chatCircle(members, takeSpot()));
+            const grp = newGroup(meetSpot(CLASSROOMS[c]), n, (members) => chatCircle(members, takeSpot()));
             for (let k = 0; k < n; k++) {
               soon(t, () => {
                 const a = leaveClass(c, { pace: 1.15, tag: 'lunch' }, (b) => meet(grp, b), kind);
@@ -1016,8 +1089,11 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell }) {
         }
       }
       for (let i = 0; i < 6; i++) {
-        const a = pool.spawn([...stairOut(B_STAIR), ...WEST_FROM_B, randIn(COURT)], { teacher: false, tag: 'basket' });
-        if (a) runAround(a, COURT, 'basket');
+        later(i * 1.1, () => {
+          if (phase?.id !== 'lunch') return;
+          const a = pool.spawn([...stairOut(B_STAIR), ...WEST_FROM_B, randIn(COURT)], { teacher: false, tag: 'basket' });
+          if (a) a.onArrive = (b) => b.tag === 'basket' && runAround(b, COURT, 'basket');
+        });
       }
     }
     if (p.id === 'classes2') {
@@ -1053,8 +1129,9 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell }) {
       });
       const cls = a.data?.cls ?? Math.floor(rng() * CLASSES);
       const lat = LAT[Math.min(5, members.length)];
+      // (still on the way down to meet the others: they turn back as soon as they're out of the building)
       later(rng() * 5, () =>
-        members.forEach((m, k) => m.active && goToClass(m, cls, [], { pace: evenPace(m, 1.4), lateral: lat[k], queue: k }))
+        members.forEach((m, k) => m.active && reroute(m, (b) => b.active && goToClass(b, cls, toYard(b.pos), { pace: evenPace(b, 1.4), lateral: lat[k], queue: k })))
       );
     }
     sendIn((a) => a.tag === 'basket', 'west');
@@ -1221,6 +1298,16 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell }) {
         let n = 0;
         while (walkSchedule.length && walkSchedule[walkSchedule.length - 1].t <= minutes && n < 6) {
           const g = walkSchedule.pop();
+          if (g.unseen) {
+            // came in by the side gate: they're at their desks
+            for (let k = 0; k < g.n; k++) {
+              const cls = pickClass();
+              const kind = rng() < 0.5 ? 'boy' : 'girl';
+              const st = reserveSeat(cls, kind);
+              if (st) occupy(cls, st, { kind: st.kind, size: 0.78 + rng() * 0.14, tone: 0.84 + rng() * 0.16 });
+            }
+            continue;
+          }
           const [start, via] = walkerFrom(rng() < 0.5 ? -1 : 1);
           arriveGroup(start, via, g.n);
           n++;
@@ -1347,7 +1434,7 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell }) {
         let nearest = null;
         let nd = Infinity;
         for (const a of bs.players) {
-          if (!a.active || a.tag !== 'football') continue;
+          if (!a.active || a.tag !== 'football' || !a.onPitch) continue;
           const d = a.pos.distanceTo(bs.pos);
           if (d < nd) {
             nd = d;
@@ -1355,7 +1442,7 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell }) {
           }
         }
         for (const a of bs.players) {
-          if (!a.active || a.tag !== 'football') continue;
+          if (!a.active || a.tag !== 'football' || !a.onPitch) continue;
           if (!a.path || a.seg >= a.path.length || rng() < dt * 0.6) {
             if (a === nearest) kickOff.set(0, 0, 0);
             else kickOff.set((rng() - 0.5) * 14, 0, (rng() - 0.5) * 14);

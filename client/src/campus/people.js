@@ -46,6 +46,10 @@ function wall(a, goal, z0) {
   const inside = z0 < 44;
   if (inside && a.pos.z > 43.6) a.pos.z = z0 > 43.6 ? z0 : 43.6;
   else if (!inside && a.pos.z < 44.45) a.pos.z = 44.45;
+  else if (!inside && Math.abs(a.pos.x) < 9.9 && a.pos.z < 44.85) {
+    a.pos.z = 44.85; // (the gate's pylons stand a little proud of the wall: just step round them)
+    return;
+  }
   else return;
   if ((goal.z > 44) !== inside || a.path?.[a.seg] !== goal) return; // (just brushed it: carry on along it)
   const sx = Math.sign(a.pos.x);
@@ -148,10 +152,11 @@ function separate(lists, dt) {
       if (!a.active || a.run || a.force > 0 || !(a.moving || a.gateT > 0 || a.yieldT > 0)) continue;
       const goal = a.path?.[a.seg];
       if (!goal) continue;
-      // (in a doorway, an aisle, a stair or the gap beside a line: only the gentlest nudge)
-      const tight = goal.exact || goal.narrow ? 0.2 : (goal.squeeze ?? 1);
-      // nearly there (a seat, a spot in a line): no jostling
+      // (in a doorway, an aisle, a stair or the gap beside a line: only the gentlest nudge — but still out in the
+      // open, heading for a doorway or a stair, the usual elbow room, so a crowd waiting to go in doesn't squash up)
       const gd = Math.hypot(goal.x - a.pos.x, goal.z - a.pos.z);
+      const tight = goal.exact || (goal.narrow && (a.pos.y > 0.3 || gd < 2.2)) ? 0.2 : goal.narrow ? 1 : (goal.squeeze ?? 1);
+      // nearly there (a seat, a spot in a line): no jostling
       if (gd < 0.7 && a.seg === a.path.length - 1) continue;
       let px = 0;
       let pz = 0;
@@ -159,30 +164,37 @@ function separate(lists, dt) {
       const fz = Math.cos(a.heading);
       const cx = Math.floor(a.pos.x);
       const cz = Math.floor(a.pos.z);
-      const fl = Math.max(0, Math.min(7, Math.round(a.pos.y / 3.6)));
+      // (on a stair halfway between floors the people around may be filed under the floor above or below)
+      const fy = a.pos.y / 3.6;
+      const fl = Math.max(0, Math.min(7, Math.round(fy)));
+      const fl2 = Math.abs(fy - fl) > 0.33 ? Math.max(0, Math.min(7, fy > fl ? fl + 1 : fl - 1)) : fl;
       for (let ix = -1; ix <= 1; ix++) {
         for (let iz = -1; iz <= 1; iz++) {
-          const cell = _grid.get(((cx + ix + 512) * 1024 + (cz + iz + 512)) * 8 + fl);
-          if (!cell) continue;
-          for (const b of cell) {
-            if (b === a || Math.abs(b.pos.y - a.pos.y) > 0.6) continue;
-            const dx = a.pos.x - b.pos.x;
-            const dz = a.pos.z - b.pos.z;
-            const r = SEP * (a.size + b.size) * 0.6;
-            const d2 = dx * dx + dz * dz;
-            if (d2 > r * r) continue;
-            const d = Math.sqrt(d2) || 0.001;
-            const w = (r - d) / r;
-            // someone ahead of us: pass them on the side we're already on (or the left) — but not in a narrow
-            // passage, where we just keep a step behind
-            const ahead = -(dx * fx + dz * fz);
-            if (ahead > 0.05 && tight > 0.3) {
-              const side = dx * fz - dz * fx >= 0 ? 1 : -1;
-              px += fz * side * w * 0.8;
-              pz += -fx * side * w * 0.8;
+          for (let f = fl; ; f = fl2) {
+            const cell = _grid.get(((cx + ix + 512) * 1024 + (cz + iz + 512)) * 8 + f);
+            if (cell) {
+              for (const b of cell) {
+                if (b === a || Math.abs(b.pos.y - a.pos.y) > 0.6) continue;
+                const dx = a.pos.x - b.pos.x;
+                const dz = a.pos.z - b.pos.z;
+                const r = SEP * (a.size + b.size) * 0.6;
+                const d2 = dx * dx + dz * dz;
+                if (d2 > r * r) continue;
+                const d = Math.sqrt(d2) || 0.001;
+                const w = (r - d) / r;
+                // someone ahead of us: pass them on the side we're already on (or the left) — but not in a narrow
+                // passage, where we just keep a step behind
+                const ahead = -(dx * fx + dz * fz);
+                if (ahead > 0.05 && tight > 0.3) {
+                  const side = dx * fz - dz * fx >= 0 ? 1 : -1;
+                  px += fz * side * w * 0.8;
+                  pz += -fx * side * w * 0.8;
+                }
+                px += (dx / d) * w;
+                pz += (dz / d) * w;
+              }
             }
-            px += (dx / d) * w;
-            pz += (dz / d) * w;
+            if (f === fl2) break;
           }
         }
       }
@@ -193,12 +205,59 @@ function separate(lists, dt) {
       a.pos.x += px * k;
       a.pos.z += pz * k;
       keepOff(a);
+      // (in an upstairs corridor: never squeezed out over the parapet)
+      if (a.pos.y > 3.5) parapet(a);
       // (on the footpath outside the wall: never squeezed into the wall or off the kerb)
       if (a.pos.y < 0.3 && a.pos.z > 44 && a.pos.z < 47 && goal.z > 44.4 && goal.z < KERB) a.pos.z = Math.min(46.2, Math.abs(a.pos.x) > 7.6 ? Math.max(44.62, a.pos.z) : a.pos.z);
       else kerb(a, goal, z0);
     }
   }
 }
+/**
+ * In a doorway, on a stair, in a corridor or the gap beside the lines, people walk in single file: how much of
+ * this step can `a` take without walking into the back of whoever is just ahead going the same way?
+ * (1 = all of it, 0 = wait.) Someone coming the other way, or standing still out in the open, is passed instead.
+ */
+function followRoom(a, dirX, dirZ, narrow) {
+  if (!_grid.size) return 1;
+  const ax = a.pos.x + dirX * 0.4;
+  const az = a.pos.z + dirZ * 0.4;
+  const cx = Math.floor(ax);
+  const cz = Math.floor(az);
+  const fy = a.pos.y / 3.6;
+  const fl = Math.max(0, Math.min(7, Math.round(fy)));
+  const fl2 = Math.abs(fy - fl) > 0.33 ? Math.max(0, Math.min(7, fy > fl ? fl + 1 : fl - 1)) : fl;
+  const keep = 0.36 * (a.size + 0.15); // (a step behind: about 0.36 m for a student)
+  let room = 1;
+  for (let ix = -1; ix <= 1; ix++) {
+    for (let iz = -1; iz <= 1; iz++) {
+      for (let f = fl; ; f = fl2) {
+        const cell = _grid.get(((cx + ix + 512) * 1024 + (cz + iz + 512)) * 8 + f);
+        if (cell) {
+          for (const b of cell) {
+            if (b === a || !b.active || Math.abs(b.pos.y - a.pos.y) > 0.5) continue;
+            const dx = b.pos.x - a.pos.x;
+            const dz = b.pos.z - a.pos.z;
+            const ahead = dx * dirX + dz * dirZ;
+            if (ahead <= 0.02 || ahead > keep + 0.3) continue;
+            if (Math.abs(dx * dirZ - dz * dirX) > 0.26) continue; // (beside us, not in front)
+            // only someone walking our way (or anyone at all in a narrow passage, unless they're coming at us)
+            const same = Math.sin(b.heading) * dirX + Math.cos(b.heading) * dirZ;
+            if (same < -0.2) continue;
+            if (!narrow && !(b.moving && same > 0.4)) continue;
+            // (two side by side at a merge, each a little ahead of the other: one of them gives way, not both)
+            const back = -(dx * Math.sin(b.heading) + dz * Math.cos(b.heading));
+            if (b.moving && back > 0.02 && Math.abs(dx * Math.cos(b.heading) - dz * Math.sin(b.heading)) < 0.26 && a.anim > b.anim) continue;
+            room = Math.min(room, Math.max(0, (ahead - keep) / 0.3));
+          }
+        }
+        if (f === fl2) break;
+      }
+    }
+  }
+  return room;
+}
+
 // a zone has a "path" strip (where the vehicle actually drives) and a wider waiting band around it
 const sideOf = (z, x, y) => Math.abs((x - z.x) * z.fz - (y - z.z) * z.fx);
 const alongOf = (z, x, y) => (x - z.x) * z.fx + (y - z.z) * z.fz;
@@ -246,6 +305,53 @@ export function floorAt(x, z) {
     y = Math.max(y, GROUND + (r.h - GROUND) * t);
   }
   return y;
+}
+
+/**
+ * A lesson, on a loop (each teacher at their own point in it): explaining to the class, a few steps to the
+ * board to write, back to the middle, across to the window side to point at someone with a question, back
+ * again. s.teach = { mid, board, side: [x, z], face (towards the class), back (towards the board) }
+ */
+const LESSON = [
+  { t: 7, at: 'mid', do: 'talk' },
+  { t: 2.2, to: 'board' },
+  { t: 6, at: 'board', do: 'write' },
+  { t: 2.2, to: 'mid' },
+  { t: 4, at: 'mid', do: 'talk' },
+  { t: 2.4, to: 'side' },
+  { t: 3, at: 'side', do: 'point' },
+  { t: 2, at: 'side', do: 'talk' },
+  { t: 2.4, to: 'mid' },
+];
+const LESSON_LEN = LESSON.reduce((n, l) => n + l.t, 0);
+function teachAt(s, elapsed) {
+  const T = s.teach;
+  // (for checking the poses: window.__teachForce = 'write' | 'point' | 'talk0' …)
+  const force = typeof window !== 'undefined' && window.__teachForce;
+  if (force) return { x: T[force === 'write' ? 'board' : force === 'point' ? 'side' : 'mid'][0], z: T[force === 'write' ? 'board' : force === 'point' ? 'side' : 'mid'][1], heading: force === 'write' ? T.back : T.face, frame: force };
+  let t = (elapsed + s.phase) % LESSON_LEN;
+  let from = 'mid';
+  for (const l of LESSON) {
+    if (t < l.t) {
+      if (l.at) {
+        const [x, z] = T[l.at];
+        const talkT = (elapsed * 0.5 + s.phase) % 4;
+        const frame = l.do === 'write' ? 'write' : l.do === 'point' ? 'point' : `talk${talkT < 1.5 ? Math.floor(talkT * 2) % 3 : 3}`;
+        return { x, z, heading: l.do === 'write' ? T.back : T.face, frame };
+      }
+      // walking between spots
+      const [x0, z0] = T[from];
+      const [x1, z1] = T[l.to];
+      const k = t / l.t;
+      const e = k * k * (3 - 2 * k);
+      return { x: x0 + (x1 - x0) * e, z: z0 + (z1 - z0) * e, heading: Math.atan2(x1 - x0, z1 - z0), frame: `walk${Math.floor(((elapsed + s.phase) * 1.6) % 1 * 4)}` };
+    }
+    t -= l.t;
+    if (l.to) from = l.to;
+    else if (l.at) from = l.at;
+  }
+  const [x, z] = T.mid;
+  return { x, z, heading: T.face, frame: 'talk3' };
 }
 
 /** moves one person along their route; returns true while they're walking */
@@ -327,7 +433,19 @@ function step(a, dt, tmp) {
       return false;
     }
     tmp.normalize();
-    const stepLen = Math.min(d, speed * dt);
+    let stepLen = Math.min(d, speed * dt);
+    // keep a step behind whoever's ahead in a narrow place (a door, a stair, a corridor, a lane)
+    if (giveWay && !a.run) {
+      const near = Math.abs(goal.x - a.pos.x) + Math.abs(goal.z - a.pos.z) < 2.6;
+      const narrow = goal.exact || (goal.narrow && near) || a.pos.y > 0.3;
+      if (narrow || goal.narrow || goal.squeeze !== undefined) {
+        const room = followRoom(a, tmp.x, tmp.z, narrow);
+        if (room < 1) {
+          stepLen *= room;
+          if (stepLen < 1e-4) return false;
+        }
+      }
+    }
     // a vehicle turning at the gate: wait till it's through
     // (only those about to cross the footpath in the gateway: someone just inside, heading in, carries on; and
     // nobody waits for ever)
@@ -396,9 +514,22 @@ function step(a, dt, tmp) {
 const OBSTACLES = [
   { x0: -2.1, x1: 2.1, z0: -13.1, z1: -8.9 }, // the flag platform
   { x0: -5.5, x1: 5.5, z0: -25.0, z1: -15.65 }, // the clock tower and its porch (with the columns): walked round, never across
+  { x0: -10.05, x1: -9.45, z0: 41.3, z1: 41.9 }, // the watchman at the gate
+  { x0: -13.8, x1: -10.2, z0: 39.9, z1: 43.0 }, // his guard house
+  { x0: -0.78, x1: -0.22, z0: 40.75, z1: 43.0 }, // the median between the walkers' lane and the vehicles'
+  { x0: -20.2, x1: -13.8, z0: 18.3, z1: 24.7 }, // the fountain's basin
   // the courtyard benches against the wings
   ...[[-26.15, -20], [-26.15, -11.2], [26.15, -20], [26.15, -12.8]].map(([x, z]) => ({ x0: x - 0.25, x1: x + 0.25, z0: z - 0.9, z1: z + 0.9 })),
 ];
+/** the upstairs corridors: their courtyard edge (the parapet) is 8.75 m from each block's outer wall */
+function parapet(a) {
+  const { x, z } = a.pos;
+  if (z > -27.8 && z < -24.9 && Math.abs(x) < 27.2) a.pos.z = Math.min(z, -25.4);
+  else if (z > -25 && z < 8.3) {
+    if (x > -30 && x < -26.6) a.pos.x = Math.min(x, -27.4);
+    else if (x < 30 && x > 26.6) a.pos.x = Math.max(x, 27.4);
+  }
+}
 /** someone jostled onto an obstacle steps straight back off it, to the nearest side */
 function keepOff(a) {
   if (a.pos.y > 0.3) return;
@@ -499,13 +630,27 @@ function setRoute(a, points, { run = false, onArrive = null, wait = 0, face = nu
     c.exact = p.exact;
     c.narrow = p.narrow;
     c.squeeze = p.squeeze;
+    c.stair = p.stair;
     c.hold = 0;
     return c;
   });
+  // on a staircase there's room for two abreast: each person keeps to one side of the flight (friends side by
+  // side), so a class going up flows in two files instead of one
+  const lane = (lateral ? Math.sign(lateral) : a.anim < 0.5 ? -1 : 1) * 0.3;
   const jitter = lateral ? 0.25 : 1;
   for (let i = 0; i < n; i++) {
     const c = a.path[i];
     if (c.exact) continue;
+    if (c.stair) {
+      const prev = i > 0 ? points[i - 1] : a.pos;
+      const next = i < n - 1 ? points[i + 1] : points[i];
+      const dx = (i === n - 1 ? points[i].x : next.x) - prev.x;
+      const dz = (i === n - 1 ? points[i].z : next.z) - prev.z;
+      const l = Math.hypot(dx, dz) || 1;
+      c.x += (dz / l) * lane;
+      c.z += (-dx / l) * lane;
+      continue;
+    }
     if (lateral) {
       // perpendicular to the direction of travel through this point
       const prev = i > 0 ? points[i - 1] : a.pos;
@@ -561,6 +706,8 @@ const PALETTES = {
   teacherF: { shirt: '#d9c49b', pants: '#7a2030', tie: '#7a2030', tie2: '#7a2030', skin: '#9a6545', hair: '#100b08', belt: '#dcc79a', socks: '#7a2030', shoe: '#3a2414', trim: '#a8833c', tieOn: 0, girl: 1, saree: 1, teach: 1 },
   teacherF2: { shirt: '#56602a', pants: '#6f7432', tie: '#6f7432', tie2: '#6f7432', skin: '#a06c4a', hair: '#120c09', belt: '#7a2430', socks: '#6f7432', shoe: '#3a2414', trim: '#d2b05a', tieOn: 0, girl: 1, saree: 1, teach: 1 },
   teacherF3: { shirt: '#7a2030', pants: '#dccaa2', tie: '#dccaa2', tie2: '#dccaa2', skin: '#8e5d3e', hair: '#0e0a08', belt: '#7a2030', socks: '#dccaa2', shoe: '#3a2414', trim: '#c9a24a', tieOn: 0, girl: 1, saree: 1, teach: 1 },
+  // the watchman at the gate: khaki shirt and trousers, a dark peaked cap, a moustache
+  guard: { shirt: '#b39d6c', pants: '#5a4e33', tie: '#b39d6c', tie2: '#b39d6c', skin: '#7a4e33', hair: '#141110', belt: '#1a140e', socks: '#1a1a1a', shoe: '#0d0d0d', trim: '#2a2c33', tieOn: 0, girl: 0, beard: 0.7, guard: 1 },
 };
 export const MALE_TEACHERS = ['teacher', 'teacher2', 'teacher3'];
 export const FEMALE_TEACHERS = ['teacherF', 'teacherF2', 'teacherF3'];
@@ -675,6 +822,10 @@ function skinnedParts(root) {
 }
 
 // extra bone rotations for poses the file doesn't have
+// teaching: the right hand up at the board with chalk; pointing at the class
+// (the rig's upper-arm bone raises the arm forward about its local y axis, out to the side about -z)
+const WRITE = [['RightArm', 0, 1.9, -0.3], ['RightForeArm', 0, 0.7, 0]];
+const POINT = [['RightArm', 0, 1.35, -0.55]];
 const SIT = [
   ['LeftUpLeg', -1.55, 0, 0], ['RightUpLeg', -1.55, 0, 0], ['LeftLeg', 1.55, 0, 0], ['RightLeg', 1.55, 0, 0],
   ['LeftArm', -0.5, 0, 0], ['RightArm', 0.5, 0, 0], ['LeftForeArm', 0, 0, -1.3], ['RightForeArm', 0, 0, 1.3], ['Spine', 0.12, 0, 0],
@@ -1162,9 +1313,24 @@ function sareeClothes(S, j, seg) {
   S.ball(to(new THREE.Vector3(0, 1.625, -0.15)), 0.068, 'hair', 1, 0.85, 0.8);
 }
 
+/** the watchman's peaked cap: a stiff crown a little wider at the top, a band, and a peak over the eyes */
+function guardCap(S, j, seg) {
+  const to = headFrame(j);
+  const at = (x, y, z) => to(new THREE.Vector3(x, y, z).add(HEAD_C));
+  const o = at(0, 0, 0);
+  const ax = at(1, 0, 0).sub(o).normalize();
+  const az = at(0, 0, 1).sub(o).normalize();
+  const ring = (y, ra, rb) => ({ c: at(0, y, -0.008), a: ax, b: az, ra, rb });
+  S.tube([ring(0.035, 0.094, 0.126), ring(0.075, 0.1, 0.133), ring(0.128, 0.111, 0.146), ring(0.145, 0.105, 0.14), ring(0.152, 0.002, 0.002)], seg, 'trim');
+  // the peak, tipped down a little at the front
+  const peak = new THREE.Vector3(0, 0.04, 0.155).add(HEAD_C);
+  const tilt = (p) => to(p.clone().sub(peak).applyAxisAngle(X, 0.28).add(peak));
+  S.box(peak, 0.078, 0.006, 0.04, 'trim', tilt);
+}
+
 // where each kind of cloth sits in the uniform shader's colour regions
 const M = (k) => [k, 3, 0];
-const ROLE_BIND = { band: M(MARK.band), body: [0, 1.1, 0], skirt: [0, 0.7, 0], hair: M(MARK.hair), saree: [0, 0.5, 0], border: M(MARK.border), shirt: [0, 1.1, 0], book: M(MARK.book), notebook: M(MARK.notebook), page: M(MARK.page) };
+const ROLE_BIND = { trim: M(MARK.trim), band: M(MARK.band), body: [0, 1.1, 0], skirt: [0, 0.7, 0], hair: M(MARK.hair), saree: [0, 0.5, 0], border: M(MARK.border), shirt: [0, 1.1, 0], book: M(MARK.book), notebook: M(MARK.notebook), page: M(MARK.page) };
 /** the shader's region for each vertex (a saree border alternates two colours round the hem: its woven pattern) */
 const bindOf = (r, i) => (r === 'border' && i % 3 === 0 ? M(MARK.trim) : ROLE_BIND[r]);
 function shapesToBaked(S) {
@@ -1202,7 +1368,8 @@ function dressed(body, joints, kind, ratio, err = 0.2) {
     if (!sitting) heldBook(S, joints, 1, 'notebook');
   } else if (P.saree) sareeClothes(S, joints, seg);
   else if (!P.teach) S.cap(headFrame(joints), 'hair', { bump: 0.06, rings: ratio < 0.05 ? 4 : 6, around: ratio < 0.05 ? 10 : 16, grow: 1.04, nape: 2.05 }); // short curly hair
-  if (P.teach && !sitting) heldBook(S, joints, -1, 'book', [0.12, 0.022, 0.09]);
+  if (P.guard) guardCap(S, joints, seg);
+  if (P.teach && !sitting) heldBook(S, joints, 1, 'book', [0.12, 0.022, 0.09]);
   if (P.teach && sitting) {
     // sitting down: a book open in both hands, in the lap or on the table
     const mid = joints.handL.clone().lerp(joints.handR, 0.5).add(new THREE.Vector3(0, 0.025, 0.05));
@@ -1521,12 +1688,23 @@ export async function createPeople(scene, L, rng, P, camera) {
   await breathe();
   // teachers: sitting, and standing at the board talking (nodding frames)
   const TEACH_FRAMES = [raw[TALK], raw[TALK + 1], raw[TALK + 2], idleBody];
+  const TEACH_WALK = [raw[0], raw[2], raw[4], raw[6]]; // (a slow walk along the front of the class)
+  const WRITE_BODY = bake(clips.idle, 1.0, WRITE);
+  const POINT_BODY = bake(clips.idle, 1.0, POINT);
   const tLods = [Math.max(P.crowdLod, 0.12), P.crowdFar * 1.6];
   const teacherGeo = {};
   for (const sex of ['m', 'f']) {
     const k = sex === 'm' ? 'teacher' : 'teacherF';
-    teacherGeo[sex] = tLods.map((r) => ({ sit: dressed(SIT_BODY.geo, SIT_BODY.joints, k, r), talk: TEACH_FRAMES.map((b) => dressed(b.geo, b.joints, k, r)) }));
+    teacherGeo[sex] = tLods.map((r) => ({
+      sit: dressed(SIT_BODY.geo, SIT_BODY.joints, k, r),
+      talk: TEACH_FRAMES.map((b) => dressed(b.geo, b.joints, k, r)),
+      walk: TEACH_WALK.map((b) => dressed(b.geo, b.joints, k, r)),
+      write: dressed(WRITE_BODY.geo, WRITE_BODY.joints, k, r),
+      point: dressed(POINT_BODY.geo, POINT_BODY.joints, k, r),
+    }));
+    await breathe();
   }
+  const guardGeo = tLods.map((r) => ({ talk: TEACH_FRAMES.map((b) => dressed(b.geo, b.joints, 'guard', r)), point: dressed(POINT_BODY.geo, POINT_BODY.joints, 'guard', r) }));
   raw.forEach((b) => b.geo.dispose());
   for (const g of simplified.values()) g.dispose();
   simplified.clear();
@@ -1545,8 +1723,16 @@ export async function createPeople(scene, L, rng, P, camera) {
     tLods.forEach((_, lod) => {
       pm(`${k}|sit|${lod}`, teacherGeo[sex][lod].sit, mats[k], 12);
       teacherGeo[sex][lod].talk.forEach((g, f) => pm(`${k}|talk${f}|${lod}`, g, mats[k], 24));
+      teacherGeo[sex][lod].walk.forEach((g, f) => pm(`${k}|walk${f}|${lod}`, g, mats[k], 16));
+      pm(`${k}|write|${lod}`, teacherGeo[sex][lod].write, mats[k], 16);
+      pm(`${k}|point|${lod}`, teacherGeo[sex][lod].point, mats[k], 16);
     });
   }
+  // the watchman: standing at the gate, or holding up a hand while a vehicle turns in
+  guardGeo.forEach((g, lod) => {
+    g.talk.forEach((geo, f) => pm(`guard|talk${f}|${lod}`, geo, mats.guard, 2));
+    pm(`guard|point|${lod}`, g.point, mats.guard, 2);
+  });
   const posedAll = [...posedMeshes.values()];
   let altN = 0;
   const groups = [];
@@ -1558,8 +1744,8 @@ export async function createPeople(scene, L, rng, P, camera) {
       return g;
     },
     /** one seat (or teaching spot) in a group */
-    slot(g, { kind, pose = 'sit', x, y, z, heading = 0, size = 1, tone = 1 }) {
-      const s = { g, kind, pose, x, y, z, heading, size, tone, on: false, phase: Math.random() * 10, alt: (altN++ % 5) < 2 };
+    slot(g, { kind, pose = 'sit', x, y, z, heading = 0, size = 1, tone = 1, teach = null }) {
+      const s = { g, kind, pose, x, y, z, heading, size, tone, teach, on: false, phase: Math.random() * 30, alt: (altN++ % 5) < 2 };
       g.slots.push(s);
       return s;
     },
@@ -1584,14 +1770,29 @@ export async function createPeople(scene, L, rng, P, camera) {
           if (!s.on) continue;
           const lod = p.set(s.x, s.y, s.z).distanceToSquared(cam) < near2 * 1.6 ? 0 : 1;
           let key;
-          if (s.pose === 'talk') {
+          let heading = s.heading;
+          if (s.pose === 'teach' && s.teach) {
+            // (a teacher who's just walked in starts the lesson from the front of the class)
+            if (s.restart) {
+              s.phase = LESSON_LEN - (elapsed % LESSON_LEN);
+              s.restart = false;
+            }
+            const r = teachAt(s, elapsed);
+            p.set(r.x, s.y, r.z);
+            heading = r.heading;
+            key = `${s.kind}|${r.frame}|${lod}`;
+          } else if (s.pose === 'stand') {
+            key = `${s.kind}|talk3|${lod}`;
+          } else if (s.pose === 'point') {
+            key = `${s.kind}|point|${lod}`;
+          } else if (s.pose === 'talk') {
             // a teacher explaining: nods now and then, otherwise stands
             const t = (elapsed * 0.5 + s.phase) % 4;
             key = `${s.kind}|talk${t < 1.5 ? Math.floor(t * 2) % 3 : 3}|${lod}`;
           } else key = `${s.kind === 'girl' && s.alt ? 'girlP' : s.kind}|sit|${lod}`;
           const im = posedMeshes.get(key);
           if (!im || im.count >= im.userData.cap) continue;
-          q.setFromAxisAngle(up, s.heading);
+          q.setFromAxisAngle(up, heading);
           sc.setScalar(s.size);
           m4.compose(p, q, sc);
           im.setMatrixAt(im.count, m4);
@@ -1683,7 +1884,7 @@ export async function createPeople(scene, L, rng, P, camera) {
     const ag = {
       i, teacher, kind, holder, mixer, act, size, off: null,
       active: false, path: null, seg: 0, run: false, wait: 0, onArrive: null, onWaitEnd: null, holdT: 0, y0: 0, segLen: -1,
-      pos: new THREE.Vector3(), heading: 0, face: null, tag: null,
+      pos: new THREE.Vector3(), heading: 0, face: null, tag: null, anim: Math.random(),
       w: { walk: 0, run: 0, idle: 1 },
     };
     if (PALETTES[kind].saree) ag.saree = makeLiveSaree(obj, kind, holder);
@@ -1701,7 +1902,8 @@ export async function createPeople(scene, L, rng, P, camera) {
      * opts: { teacher, run, tag, onArrive(agent), wait, face, pace (walking speed, 1 = normal) }
      */
     spawn(points, opts = {}) {
-      const a = agents.find((g) => !g.active && (opts.teacher === undefined || g.teacher === opts.teacher));
+      // (a particular teacher if asked for and free, otherwise anyone of the right sort)
+      const a = (opts.kind && agents.find((g) => !g.active && g.kind === opts.kind)) || agents.find((g) => !g.active && (opts.teacher === undefined || g.teacher === opts.teacher));
       if (!a) return null;
       a.active = true;
       a.sys = this;
@@ -1783,8 +1985,8 @@ function attachExtras(obj, holder, kind, mat, pony = false) {
   }
   if (P.teach) {
     const B = new Shapes();
-    heldBook(B, REST, -1, 'book', [0.12, 0.022, 0.09]);
-    parts.push(['RightHand', B]);
+    heldBook(B, REST, 1, 'book', [0.12, 0.022, 0.09]);
+    parts.push(['LeftHand', B]);
   }
   for (const [bone, S] of parts) {
     const b = obj.getObjectByName('mixamorig' + bone);

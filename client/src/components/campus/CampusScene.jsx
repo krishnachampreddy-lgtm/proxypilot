@@ -5,13 +5,13 @@ import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 're
  * and a photo of the same campus shows until the live scene is ready.
  * The school day runs on its own; onClock reports the campus time and part of the day.
  */
-const CampusScene = forwardRef(function CampusScene({ time = 'morning', startMinutes, className = '', onProgress, onClock, onBell, onReady, onInside, frameShift, quality = 'auto' }, ref) {
+const CampusScene = forwardRef(function CampusScene({ time = 'morning', startMinutes, className = '', onProgress, onClock, onBell, onStory, onReady, onInside, frameShift, quality = 'auto' }, ref) {
   const mount = useRef(null);
   const api = useRef(null);
   const [ready, setReady] = useState(false);
   // keep the latest callbacks without rebuilding the scene
   const cb = useRef({});
-  cb.current = { onProgress, onClock, onBell, onReady, onInside };
+  cb.current = { onProgress, onClock, onBell, onStory, onReady, onInside };
 
   useEffect(() => {
     let disposed = false;
@@ -26,6 +26,7 @@ const CampusScene = forwardRef(function CampusScene({ time = 'morning', startMin
         onProgress: (p) => cb.current.onProgress?.(p),
         onClock: (m, phase) => cb.current.onClock?.(m, phase),
         onBell: (name) => cb.current.onBell?.(name),
+        onStory: (st) => cb.current.onStory?.(st),
         onInside: (on) => cb.current.onInside?.(on),
         onReady: (ok) => {
           if (disposed) return;

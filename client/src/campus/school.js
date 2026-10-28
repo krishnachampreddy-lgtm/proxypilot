@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { signTexture, canvasTexture } from './util.js';
+import { crestTexture } from './crest.js';
 import { CELLS } from './rooms.js';
 
 /*
@@ -26,6 +27,7 @@ export function frame(B, ox, oz, theta) {
   const at = (u, v) => [ox + u * c + v * s, oz - u * s + v * c];
   return {
     at,
+    theta,
     box(w, h, d, key, u, y, v, ry = 0) {
       const [x, z] = at(u, v);
       B.box(w, h, d, key, x, y, z, { ry: theta + ry });
@@ -68,11 +70,22 @@ function windowUnit(F, u, y, v, w, h, out, { chajja = false, grill = true, glass
   }
 }
 
-/** Railing pipe running along a parapet. */
-function rail(F, u0, u1, y, v) {
-  const len = Math.abs(u1 - u0);
-  F.add(new THREE.CylinderGeometry(0.03, 0.03, len, 8), 'green', (u0 + u1) / 2, y, v, { rz: Math.PI / 2 });
-  for (let u = u0; u <= u1 + 0.01; u += 1.8) F.box(0.04, 0.22, 0.04, 'green', u, y - 0.22, v);
+// a column shaft (slightly tapered) and a turned baluster, shared by every block
+const COLUMN = new THREE.CylinderGeometry(0.17, 0.2, 1, 16).scale(1, ROOFY - PLINTH - 0.32, 1);
+const BALUSTER = (() => {
+  const prof = [[0.001, 0], [0.06, 0], [0.06, 0.05], [0.035, 0.1], [0.065, 0.3], [0.035, 0.52], [0.055, 0.6], [0.055, 0.66], [0.001, 0.66]];
+  return new THREE.LatheGeometry(prof.map(([r, y]) => new THREE.Vector2(r, y)), 6);
+})();
+
+/** a chhatri: an open domed pavilion on four sandstone columns, the crowning touch of Indian roofs */
+export function chhatri(B, x, y, z, s = 1) {
+  B.box(2.4 * s, 0.25 * s, 2.4 * s, 'maroon', x, y, z);
+  for (const dx of [-0.85, 0.85]) for (const dz of [-0.85, 0.85]) B.cyl(0.1 * s, 1.5 * s, 'maroon', x + dx * s, y + 0.25 * s, z + dz * s, 10);
+  B.box(2.7 * s, 0.12 * s, 2.7 * s, 'white', x, y + 1.75 * s, z); // the eave
+  B.cyl(0.9 * s, 0.25 * s, 'white', x, y + 1.87 * s, z, 20);
+  B.add(new THREE.SphereGeometry(0.95 * s, 20, 10, 0, Math.PI * 2, 0, Math.PI / 2), 'white', x, y + 2.12 * s, z, { sy: 1.15 });
+  B.cyl(0.05 * s, 0.5 * s, 'gold', x, y + 3.15 * s, z, 6);
+  B.add(new THREE.SphereGeometry(0.12 * s, 10, 8), 'gold', x, y + 3.6 * s, z);
 }
 
 /**
@@ -129,7 +142,7 @@ function block(B, name, opts, rng, lit) {
   for (let f = 0; f < 3; f++) {
     for (const u of winU) {
       const open = hollowAt(u);
-      windowUnit(F, u, FL[f] + 0.9, 0, 2.0, 1.5, -1, { chajja: true, glass: open ? (lit(f) ? 'glassClearLit' : 'glassClear') : lit(f) ? 'glassLit' : 'glass' });
+      windowUnit(F, u, FL[f] + 0.9, 0, 2.0, 1.5, -1, { chajja: true, grill: false, glass: open ? (lit(f) ? 'glassClearLit' : 'glassClear') : lit(f) ? 'glassLit' : 'glass' });
     }
   }
 
@@ -174,8 +187,8 @@ function block(B, name, opts, rng, lit) {
       doorFrame(F, du, y, CD);
       const isStory = opts.story && opts.story.u === rc && opts.story.floor === f;
       const g = isStory ? 'glassStory' : lit(f) ? 'glassClearLit' : 'glassClear';
-      windowUnit(F, rc - 0.4, y + 0.95, CD, 1.6, 1.25, 1, { glass: g, grill: true });
-      windowUnit(F, rc + 2.0, y + 0.95, CD, 1.6, 1.25, 1, { glass: g, grill: true });
+      windowUnit(F, rc - 0.4, y + 0.95, CD, 1.6, 1.25, 1, { glass: g, grill: false });
+      windowUnit(F, rc + 2.0, y + 0.95, CD, 1.6, 1.25, 1, { glass: g, grill: false });
       F.box(0.7, 0.22, 0.03, 'board', du, y + 2.42, CD + 0.03); // class name plate above the door
     }
   }
@@ -205,14 +218,25 @@ function block(B, name, opts, rng, lit) {
   }
   const colU = opts.columns || [];
   if (!opts.columns) for (let u = cu0 + 0.2; u <= cu1 - 0.1; u += 3.6) colU.push(u);
+  // round ivory columns on red sandstone bases, a capital under every floor's beam
+  const colH = ROOFY - PLINTH - 0.32;
   for (const u of colU) {
-    F.box(0.36, ROOFY - PLINTH, 0.36, 'wallShade', u, PLINTH, D - 0.2);
-    F.box(0.44, 0.3, 0.44, 'maroon', u, PLINTH, D - 0.2); // column base
+    F.add(COLUMN, 'white', u, PLINTH + 0.32 + colH / 2, D - 0.2);
+    F.box(0.5, 0.32, 0.5, 'maroon', u, PLINTH, D - 0.2); // base
+    F.box(0.42, 0.06, 0.42, 'white', u, PLINTH + 0.32, D - 0.2);
+    for (const y of [FL[1], FL[2], ROOFY]) {
+      F.box(0.46, 0.08, 0.46, 'white', u, y - 0.86, D - 0.2); // capital
+      F.box(0.52, 0.08, 0.52, 'maroon', u, y - 0.78, D - 0.2);
+    }
   }
+  // upstairs, a stone balustrade along the corridor: sandstone base and rail, turned ivory balusters
   for (let f = 1; f < 3; f++) {
-    F.box(clen, 0.92, 0.16, 'wall', cmid, FL[f], D - 0.08);
-    F.box(clen + 0.06, 0.09, 0.28, 'maroon', cmid, FL[f] + 0.92, D - 0.08);
-    rail(F, cu0 + 0.3, cu1 - 0.3, FL[f] + 1.24, D - 0.08);
+    F.box(clen, 0.14, 0.22, 'maroon', cmid, FL[f], D - 0.1);
+    F.box(clen + 0.06, 0.1, 0.3, 'maroon', cmid, FL[f] + 0.8, D - 0.1);
+    for (let u = cu0 + 0.25; u <= cu1 - 0.2; u += 0.27) {
+      if (colU.some((c) => Math.abs(u - c) < 0.32)) continue;
+      F.add(BALUSTER, 'white', u, FL[f] + 0.14, D - 0.1);
+    }
   }
   // potted plants along the ground-floor verandah, tucked beside a column (never in front of a door or a staircase)
   for (const cu of colU) {
@@ -225,8 +249,10 @@ function block(B, name, opts, rng, lit) {
     F.add(new THREE.SphereGeometry(0.3, 10, 8), 'shrub', u, PLINTH + 0.6, D - 0.42, { sy: 0.85 });
   }
 
-  // terrace: finish, parapet with coping, tanks
+  // terrace: finish, a projecting cornice, the parapet with sandstone coping
   F.box(L - 0.3, 0.06, D - 0.3, 'roof', 0, ROOFY, D / 2);
+  F.box(L + 0.5, 0.2, 0.42, 'white', 0, ROOFY - 0.18, -0.12);
+  F.box(L + 0.5, 0.2, 0.42, 'white', 0, ROOFY - 0.18, D + 0.12);
   F.box(L + 0.2, 1.0, 0.2, 'wall', 0, ROOFY, -0.1 + 0.1);
   F.box(L + 0.2, 1.0, 0.2, 'wall', 0, ROOFY, D);
   F.box(0.2, 1.0, D, 'wall', -half, ROOFY, D / 2);
@@ -274,14 +300,6 @@ function doorFrame(F, u, y, v) {
   F.box(1.26, 0.12, 0.26, 'white', u, y + 2.12, v - 0.11);
 }
 
-/** Black ribbed water tank on a small stand (every Indian terrace has a few). */
-function tank(B, x, z, s = 1) {
-  B.box(1.9 * s, 0.35, 1.9 * s, 'concrete', x, ROOFY, z);
-  B.cyl(0.85 * s, 1.5 * s, 'tank', x, ROOFY + 0.35, z, 20);
-  for (let i = 1; i < 5; i++) B.cyl(0.87 * s, 0.05, 'tank', x, ROOFY + 0.35 + i * 0.3 * s, z, 20);
-  B.cyl(0.5 * s, 0.25 * s, 'tank', x, ROOFY + 0.35 + 1.5 * s, z, 16, { r2: 0.15 * s });
-}
-
 export function buildSchool(scene, B, M, rng) {
   // windows lit in the evening: roughly two in three, mostly on lower floors
   const lit = (f) => rng.chance(f === 0 ? 0.75 : f === 1 ? 0.6 : 0.45);
@@ -301,9 +319,9 @@ export function buildSchool(scene, B, M, rng) {
     B.box(5, 3, 4.2, 'wall', x, ROOFY, -30.5);
     B.box(5.3, 0.25, 4.5, 'maroon', x, ROOFY + 3, -30.5);
     B.box(1.0, 2.1, 0.06, 'wood', x + 1, ROOFY, -28.37);
-    tank(B, x - 1, -30.5 - 0.3, 0.8);
   }
-  [[-20, -31], [-12, -31], [-26, -31], [-31, -18], [31, 2], [-31, 4]].forEach(([x, z], i) => tank(B, x, z, i % 2 ? 1 : 0.9));
+  // chhatris on the corners of the roofs
+  for (const [x, z] of [[-34.2, -32.2], [34.2, -32.2], [-31.5, 6.3], [31.5, 6.3], [-24, -26.6], [24, -26.6]]) chhatri(B, x, ROOFY, z, 0.9);
 
   // solar panels on the back block
   for (let r = 0; r < 2; r++) {
@@ -329,9 +347,15 @@ export function buildSchool(scene, B, M, rng) {
   B.box(6.2, 5, 6.2, 'wall', TX, 15.05, TZ);
   for (const sx of [-1, 1]) for (const sz of [-1, 1]) B.box(0.42, 5, 0.42, 'maroon', TX + sx * 3, 15.05, TZ + sz * 3);
   B.box(6.8, 0.4, 6.8, 'white', TX, 20.05, TZ);
-  B.add(new THREE.ConeGeometry(5.2, 4.2, 4, 1), 'rooftiles', TX, 20.45 + 2.1, TZ, { ry: Math.PI / 4 });
-  B.cyl(0.08, 2.2, 'gold', TX, 24.6, TZ, 8);
-  B.add(new THREE.SphereGeometry(0.32, 16, 12), 'gold', TX, 24.9, TZ);
+  // a drum and a white dome with a gold finial, a small chhatri at each corner
+  B.cyl(2.5, 0.25, 'maroon', TX, 20.45, TZ, 28);
+  B.cyl(2.3, 1.2, 'white', TX, 20.7, TZ, 28);
+  B.cyl(2.45, 0.18, 'maroon', TX, 21.9, TZ, 28);
+  B.add(new THREE.SphereGeometry(2.45, 32, 14, 0, Math.PI * 2, 0, Math.PI / 2), 'white', TX, 22.05, TZ, { sy: 1.2 });
+  B.cyl(0.32, 0.4, 'gold', TX, 24.95, TZ, 12);
+  B.cyl(0.07, 1.6, 'gold', TX, 25.35, TZ, 8);
+  B.add(new THREE.SphereGeometry(0.28, 16, 12), 'gold', TX, 26.0, TZ);
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) chhatri(B, TX + sx * 2.85, 20.45, TZ + sz * 2.85, 0.42);
   // tall arched windows on the tower front
   const TF = frame(B, TX, TZ + 3.6, 0);
   for (const f of [0, 1, 2]) windowUnit(TF, 0, FL[f] + 0.8, 0, 1.4, 2.0, 1, { glass: f === 0 ? 'glassLit' : 'glass', grill: false });
@@ -347,6 +371,16 @@ export function buildSchool(scene, B, M, rng) {
     B.box(0.66, 0.25, 0.66, 'maroon', TX + x, PLINTH, PZ + 4.55);
   }
   for (let s = 0; s < 3; s++) B.box(8 - s * 0.6, 0.15, 0.4, 'plinth', TX, s * 0.15, PZ + 5.2 - s * 0.4 + 0.8);
+  // a classical pediment over the porch, with the crest in it
+  {
+    const tri = new THREE.Shape();
+    tri.moveTo(-5.7, 0);
+    tri.lineTo(5.7, 0);
+    tri.lineTo(0, 1.9);
+    tri.closePath();
+    B.add(new THREE.ExtrudeGeometry(tri, { depth: 0.4, bevelEnabled: false }), 'white', TX, FL[1], PZ + 4.55);
+    B.box(11.6, 0.14, 0.5, 'maroon', TX, FL[1] - 0.02, PZ + 4.75);
+  }
   B.box(1.0, 2.6, 0.08, 'wood', TX, PLINTH, PZ + 0.04); // main door
   B.box(1.0, 2.6, 0.08, 'wood', TX - 1.05, PLINTH, PZ + 0.04);
 
@@ -355,6 +389,9 @@ export function buildSchool(scene, B, M, rng) {
   const sign = new THREE.Mesh(new THREE.PlaneGeometry(8.6, 0.56), new THREE.MeshStandardMaterial({ map: signTexture('PROXYPILOT SCHOOL', { w: 2048, h: 134, font: '700 96px Georgia, serif' }), roughness: 0.45, metalness: 0.2 }));
   sign.position.set(TX, FL[1] - 0.64, PZ + 5.06);
   extras.add(sign);
+  const crest = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 1.6), new THREE.MeshStandardMaterial({ map: crestTexture(), transparent: true, alphaTest: 0.4, roughness: 0.5 }));
+  crest.position.set(TX, FL[1] + 0.82, PZ + 4.97);
+  extras.add(crest);
   const motto = new THREE.Mesh(new THREE.PlaneGeometry(4.2, 0.5), new THREE.MeshStandardMaterial({ map: signTexture('EVERY CLASS, COVERED', { w: 1024, h: 120, bg: '#e9d3a2', fg: '#7a2a1d', font: 'italic 600 64px Georgia, serif', border: false }), roughness: 0.8 }));
   motto.position.set(TX, ROOFY + 0.45, TZ + 3.61);
   extras.add(motto);

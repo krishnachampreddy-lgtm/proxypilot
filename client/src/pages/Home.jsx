@@ -104,6 +104,7 @@ export default function Home() {
   const [live, setLive] = useState(false);
   const [clock, setClock] = useState(() => ({ m: campusMinutesNow(), phase: phaseAt(campusMinutesNow()) }));
   const [bell, setBell] = useState(null);
+  const [story, setStory] = useState(null); // a ProxyPilot moment happening on campus right now
   const [frame, setFrame] = useState(() => frameFor(typeof window === 'undefined' ? 1280 : window.innerWidth));
   const scene = useRef(null);
   // picture quality: Auto fits the device; HD and 4K are the viewer's own choice (remembered)
@@ -143,6 +144,8 @@ export default function Home() {
     bellTimer.current = setTimeout(() => setBell(null), 3800);
     audio.current?.bell(name === 'Assembly' || name === 'Home time' ? 7 : 3);
   }, []);
+
+  const onStory = useCallback((st) => setStory(st), []);
 
   const toggleSound = () => {
     if (soundOn) {
@@ -221,6 +224,7 @@ export default function Home() {
           onProgress={setProgress}
           onClock={onClock}
           onBell={onBell}
+          onStory={onStory}
           onReady={(ok) => setLive(ok)}
           onInside={(on) => setInside((r) => (on ? r || 'room' : null))}
           frameShift={frame}
@@ -312,6 +316,26 @@ export default function Home() {
             <div className="glass flex items-center gap-2 rounded-full px-4 py-2 font-mono text-[11px] uppercase tracking-[0.16em] text-brass">
               <BellIcon className="h-4 w-4 origin-top animate-[ring_0.5s_ease-in-out_6]" />
               {bell} bell
+            </div>
+          </div>
+        )}
+
+        {/* a ProxyPilot moment on campus: today's cover, as it happens */}
+        {story && stop === null && (
+          <div className="pointer-events-none absolute left-1/2 top-[11.6rem] z-20 w-[min(92vw,420px)] -translate-x-1/2 sm:top-[9rem]" role="status" aria-live="polite">
+            <div key={story.step} className="glass flex gap-3 rounded-[14px] px-4 py-3 animate-[toast-in_0.35s_ease-out]">
+              <span className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${story.step === 'arrived' ? 'bg-sage/20 text-sage' : 'bg-brass/20 text-brass'}`}>
+                {story.step === 'arrived' ? (
+                  <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5" /></svg>
+                ) : (
+                  <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="m17 11 2 2 4-4" /></svg>
+                )}
+              </span>
+              <div className="min-w-0">
+                <p className={`font-mono text-[10px] uppercase tracking-[0.16em] ${story.step === 'arrived' ? 'text-sage' : 'text-brass'}`}>{story.title}</p>
+                <p className="mt-0.5 text-sm leading-snug text-ink">{story.lines?.[0]}</p>
+                <p className="text-[13px] leading-snug text-ink/70">{story.lines?.[1]}</p>
+              </div>
             </div>
           </div>
         )}

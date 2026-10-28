@@ -380,6 +380,25 @@ export function buildVehicles(scene, rng, P) {
       }
       return false;
     },
+    /** true while a vehicle is about to pass (or passing) under the barrier arm inside the gate */
+    nearBoom() {
+      for (const d of fleetList) {
+        if (!d.active || !d.obj.visible) continue;
+        const p = d.obj.position;
+        if (Math.abs(p.x) > 20 || p.z < 30 || p.z > 56) continue;
+        const r = d.obj.rotation.y + (d.reverse ? Math.PI : 0);
+        const fx = Math.sin(r);
+        const fz = Math.cos(r);
+        const hl = d.dims.len / 2;
+        const hw = d.dims.wid / 2;
+        for (const [u, v] of [[hl + 7, 0], [hl + 3.5, 0], [hl, hw], [hl, -hw], [0, 0], [-hl, hw], [-hl, -hw]]) {
+          const x = p.x + fx * u + fz * v;
+          const z = p.z + fz * u - fx * v;
+          if (x > -0.4 && x < 8 && z > 39.6 && z < 42.4) return true;
+        }
+      }
+      return false;
+    },
     /** true when no moving road traffic (either way) is about to pass x — a school vehicle waits for that before pulling out */
     roadClear(x) {
       for (const t of traffic) {

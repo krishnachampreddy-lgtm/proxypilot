@@ -119,7 +119,7 @@ export function createSoundscape() {
     /** follow the school day: phase id from the campus clock, minutes after midnight */
     setPhase(id, minutes = 8 * 60) {
       evening = minutes >= 17 * 60 + 40 ? 1 : minutes >= 17 * 60 ? (minutes - 17 * 60) / 40 : 0;
-      chatter = { arrival: 0.5, gather: 0.5, assembly: 0.1, toclass: 0.45, lunch: 0.6, home: 0.6, classes: 0.06, classes2: 0.06, evening: 0.14 }[id] ?? 0.1;
+      chatter = { arrival: 0.5, gather: 0.5, assembly: 0.1, toclass: 0.45, classes: 0.06, break: 0.6, classesB: 0.06, lunch: 0.6, classes2: 0.06, home: 0.6, after: 0.3, evening: 0.1 }[id] ?? 0.1;
       windGain.gain.linearRampToValueAtTime(evening ? 0.1 : 0.18, ctx.currentTime + 1.5);
     },
     /** kept for older callers */

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Tree, TreePreset } from './vendor/ez-tree/index.js';
 import { CAMPUS } from './grounds.js';
+import { OVAL, ESTATE_CLEAR } from './estate.js';
 import { simplifyGeometry } from './lod.js';
 
 /*
@@ -112,15 +113,25 @@ export function buildTrees(scene, L, rng, { P, merge }) {
     const xr = x + rng() * 1.5;
     // keep the gate and the buses' entry lane along the front wall clear
     if (Math.abs(x) > 14 && !(x > 10 && x < 54)) spots.ashoka.push([xr, z1 - 3.5]);
-    spots.ashoka.push([x + rng() * 1.5, z0 + 3.5]);
+    if ((x - x0) % 18 < 9) spots.ashoka.push([x + rng() * 1.5, z0 + 3.5]);
   }
-  for (let z = z0 + 8; z <= z1 - 8; z += 10) {
+  for (let z = z0 + 8; z <= z1 - 8; z += z < -80 ? 22 : 10) {
     spots.neem.push([x0 + 4 + rng() * 2, z]);
     spots.neem.push([x1 - 4 - rng() * 2, z]);
   }
   // big shade trees
-  [[-46, 34], [-70, -20], [-82, 30], [-20, -50], [10, -55], [40, -50], [-56, -66], [60, 34], [116, 34], [114, -70], [60, -74], [-86, -62]].forEach((p) => spots.banyan.push(p));
-  [[-34, -48], [-6, -62], [26, -64], [-76, 14], [-44, -6], [50, -60], [120, 0], [32, 6]].forEach((p) => spots.peepal.push(p));
+  [[-46, 34], [-70, -20], [-82, 30], [-56, -68], [60, 34], [116, 34], [60, -76], [-86, -64]].forEach((p) => spots.banyan.push(p));
+  [[26, -64], [-76, 14], [-44, -6], [50, -58], [120, 0], [32, 6]].forEach((p) => spots.peepal.push(p));
+  // shade trees round the cricket ground (none in front of the pavilion), and along the paths behind the school
+  for (let a = 0; a < 360; a += 24) {
+    const t = (a * Math.PI) / 180;
+    const r = 60 + ((a * 7) % 5);
+    const x = OVAL.x + Math.cos(t) * r;
+    const z = OVAL.z + Math.sin(t) * r;
+    if (z > -78 && Math.abs(x) < 26) continue;
+    spots[a % 48 ? 'neem' : 'banyan'].push([x, z]);
+  }
+  for (const x of [-38, -22, 22, 38]) spots.ashoka.push([x, -36.8]);
   // bushes along the buildings and the drive
   for (let z = 10; z <= 27; z += 3.2) {
     spots.bush.push([-9.6 + rng() * 0.3, z]);
@@ -149,6 +160,15 @@ export function buildTrees(scene, L, rng, { P, merge }) {
   const up = new THREE.Vector3(0, 1, 0);
   const windMats = [];
   const inCampus = ([x, z]) => x > x0 - 6 && x < x1 + 6 && z > z0 - 6 && z < z1 + 6;
+  // (nothing grows on the pool deck, the courts, the pitch, the running track or the paths)
+  const clear = ([x, z]) =>
+    !ESTATE_CLEAR.some(([a0, b0, a1, b1]) => x > a0 - 2 && x < a1 + 2 && z > b0 - 2 && z < b1 + 2) &&
+    Math.hypot(x - OVAL.x, z - OVAL.z) > OVAL.r + 3 &&
+    !(x > 60 && x < 110 && z > -77 && z < 17) &&
+    !(Math.abs(x - 57) < 3 && z < -38 && z > -97) &&
+    !(Math.abs(x + 47.5) < 3 && z < -38 && z > -64) &&
+    !(Math.abs(z + 62) < 3 && x < -45 && x > -75);
+  for (const k of Object.keys(spots)) spots[k] = spots[k].filter((p) => !inCampus(p) || clear(p));
   const lists = [];
   const farMeshes = [];
   for (const spec of SPECIES) {

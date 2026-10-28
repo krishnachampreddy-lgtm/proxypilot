@@ -2,10 +2,14 @@ import * as THREE from 'three';
 import { canvasTexture, signTexture } from './util.js';
 import { Batch } from './batch.js';
 import { furnishLibrary } from './interiors.js';
+import { chhatri } from './school.js';
+import { crestTexture } from './crest.js';
+import { buildEstate } from './estate.js';
 
 /* Ground, lawns, paths, sports areas, compound wall, gate, road, poles and the library. */
 
-export const CAMPUS = { x0: -96, x1: 126, z0: -80, z1: 44 };
+// (the grounds run back past the cricket oval, the pool and the auditorium: see estate.js)
+export const CAMPUS = { x0: -96, x1: 126, z0: -172, z1: 44 };
 const ROAD_Z = 53;
 
 // ---------- ground with grass, dry patches and worn earth ----------
@@ -38,7 +42,6 @@ function wornMask() {
       g.lineCap = 'round';
       g.strokeStyle = 'rgba(255,255,255,0.65)';
       g.lineWidth = 1.6 * sx;
-      g.beginPath(); g.moveTo(X(-8), Z(30)); g.quadraticCurveTo(X(-20), Z(18), X(-30), Z(10)); g.stroke();
       g.beginPath(); g.moveTo(X(40), Z(10)); g.quadraticCurveTo(X(52), Z(0), X(60), Z(-6)); g.stroke();
       g.beginPath(); g.moveTo(X(-40), Z(-20)); g.lineTo(X(-60), Z(-34)); g.stroke();
       // around the library and the basketball court
@@ -316,42 +319,199 @@ export function buildGrounds(scene, B, M, L, rng, P) {
     }
   };
   const { x0, x1, z0, z1 } = CAMPUS;
-  wallRun(x0, z1, x1, z1, (x) => Math.abs(x) < 8);
+  wallRun(x0, z1, x1, z1, (x) => Math.abs(x) < 17);
   wallRun(x0, z0, x1, z0);
   wallRun(x0, z0, x0, z1);
   wallRun(x1, z0, x1, z1);
 
-  // ---- main gate ----
+  // ---- the main gate: two sandstone-and-ivory pylons carrying an arched entablature with the school's name and
+  // crest, ornamental wing walls, a guard house, a boom barrier over the vehicle lane and a median that keeps
+  // the walkers' lane apart ----
   for (const s of [-1, 1]) {
-    B.box(1.4, 4.6, 1.4, 'brick', s * 8, 0, z1);
-    B.box(1.7, 0.25, 1.7, 'white', s * 8, 4.6, z1);
-    B.add(new THREE.SphereGeometry(0.32, 16, 12), 'lampOff', s * 8, 5.2, z1);
+    const px = s * 8.6;
+    B.box(2.4, 1.3, 1.5, 'maroon', px, 0, z1);
+    B.box(2.0, 4.6, 1.3, 'white', px, 1.3, z1);
+    B.box(1.1, 2.7, 0.06, 'maroon', px, 2.0, z1 + 0.66); // inlaid panels, front and back
+    B.box(1.1, 2.7, 0.06, 'maroon', px, 2.0, z1 - 0.66);
+    B.box(2.3, 0.3, 1.5, 'maroon', px, 5.9, z1);
+    B.box(2.4, 0.35, 1.6, 'maroon', px, 7.6, z1);
+    chhatri(B, px, 7.95, z1, 0.55);
+    // lanterns on brackets either side of the gateway
+    for (const fz of [1, -1]) {
+      B.box(0.08, 0.08, 0.4, 'green', px - s * 0.7, 3.9, z1 + fz * 0.84);
+      B.add(new THREE.SphereGeometry(0.2, 14, 10), 'lampOff', px - s * 0.7, 3.72, z1 + fz * 1.04);
+      B.box(0.3, 0.06, 0.3, 'green', px - s * 0.7, 3.95, z1 + fz * 1.04);
+    }
   }
-  B.box(17.4, 0.14, 0.14, 'green', 0, 6.4, z1);
-  B.box(17.4, 0.14, 0.14, 'green', 0, 7.7, z1);
-  for (let x = -8; x <= 8.01; x += 1) B.add(new THREE.BoxGeometry(0.05, 1.3, 0.05), 'green', x, 7.05, z1, { rz: x % 2 ? 0.6 : -0.6 });
-  // sliding gate: two steel panels that open in the morning and close at night
+  {
+    // the entablature over the gateway, with a shallow arch beneath
+    B.box(17.4, 1.4, 1.4, 'white', 0, 6.2, z1);
+    B.box(17.6, 0.18, 1.5, 'maroon', 0, 6.12, z1);
+    B.box(17.9, 0.25, 1.7, 'maroon', 0, 7.6, z1);
+    const arch = new THREE.Shape();
+    arch.moveTo(-7.6, 1.2);
+    arch.lineTo(7.6, 1.2);
+    arch.lineTo(7.6, 0);
+    arch.quadraticCurveTo(0, 1.6, -7.6, 0);
+    arch.closePath();
+    B.add(new THREE.ExtrudeGeometry(arch, { depth: 1.2, bevelEnabled: false, curveSegments: 24 }), 'white', 0, 5.0, z1 - 0.6);
+    // a raised centre panel for the crest
+    B.box(5.2, 1.7, 0.9, 'white', 0, 7.85, z1);
+    B.box(5.5, 0.22, 1.1, 'maroon', 0, 9.55, z1);
+    B.box(2.2, 0.3, 0.8, 'maroon', 0, 9.77, z1);
+    for (const x of [-2.5, 2.5]) {
+      B.cyl(0.18, 0.5, 'maroon', x, 9.77, z1, 10);
+      B.add(new THREE.SphereGeometry(0.2, 12, 8), 'gold', x, 10.42, z1);
+    }
+  }
+  // ornamental wing walls out to the compound wall, with a plaque on each
+  for (const s of [-1, 1]) {
+    const cx = s * 13.8;
+    B.box(8.4, 0.5, 0.6, 'maroon', cx, 0, z1);
+    B.box(8.4, 1.9, 0.45, 'white', cx, 0.5, z1);
+    B.box(8.6, 0.16, 0.62, 'maroon', cx, 2.4, z1);
+    for (const x of [s * 9.8, s * 12.6, s * 15.2, s * 17.8]) B.box(0.45, 2.7, 0.6, 'maroon', x, 0, z1);
+  }
+  // sliding gate: two bronze panels that open in the morning and close at night (they run just inside the pylons)
   const gate = [];
   for (const side of [-1, 1]) {
     const GB = new Batch(M);
     for (let b = 0; b <= 28; b++) GB.box(0.035, 2.0, 0.035, 'green', side * b * 0.26, 0.15, 0);
+    for (let b = 0; b < 14; b++) GB.add(new THREE.SphereGeometry(0.05, 8, 6), 'gold', side * (0.13 + b * 0.52), 2.25, 0); // finials
     GB.box(7.4, 0.07, 0.07, 'green', side * 3.65, 2.15, 0);
     GB.box(7.4, 0.07, 0.07, 'green', side * 3.65, 0.12, 0);
     GB.box(7.4, 0.05, 0.05, 'green', side * 3.65, 1.1, 0);
+    GB.box(7.4, 0.04, 0.04, 'gold', side * 3.65, 1.9, 0);
     GB.add(new THREE.CylinderGeometry(0.09, 0.09, 0.06, 10), 'darkMetal', side * 0.3, 0.09, 0, { rx: Math.PI / 2 });
     GB.add(new THREE.CylinderGeometry(0.09, 0.09, 0.06, 10), 'darkMetal', side * 7, 0.09, 0, { rx: Math.PI / 2 });
     const g = new THREE.Group();
     GB.build(g);
-    g.position.set(side * 0.02, 0, z1 - 0.55);
+    g.position.set(side * 0.02, 0, z1 - 1.0);
     scene.add(g);
     gate.push({ g, side });
   }
-  const gateSign = new THREE.Mesh(new THREE.PlaneGeometry(11, 1.0), new THREE.MeshStandardMaterial({ map: signTexture('PROXYPILOT SCHOOL', { w: 2048, h: 186, bg: '#1f3d30', fg: '#f3d888' }), roughness: 0.5 }));
-  gateSign.position.set(0, 7.05, z1 + 0.09);
-  const gateSignBack = gateSign.clone();
-  gateSignBack.rotation.y = Math.PI;
-  gateSignBack.position.z = z1 - 0.09;
-  scene.add(gateSign, gateSignBack);
+  const signMat = (text, w = 2048, h = 170) => new THREE.MeshStandardMaterial({ map: signTexture(text, { w, h, bg: '#a9583f', fg: '#f3d888', font: '700 104px Georgia, serif' }), roughness: 0.45, metalness: 0.25 });
+  const nameFront = new THREE.Mesh(new THREE.PlaneGeometry(12, 1.0), signMat('PROXYPILOT SCHOOL'));
+  nameFront.position.set(0, 6.9, z1 + 0.71);
+  const nameBack = nameFront.clone();
+  nameBack.rotation.y = Math.PI;
+  nameBack.position.z = z1 - 0.71;
+  const crestMat = new THREE.MeshStandardMaterial({ map: crestTexture(), transparent: true, alphaTest: 0.4, roughness: 0.5 });
+  const crestF = new THREE.Mesh(new THREE.PlaneGeometry(2.0, 2.0), crestMat);
+  crestF.position.set(0, 8.72, z1 + 0.46);
+  const crestB = crestF.clone();
+  crestB.rotation.y = Math.PI;
+  crestB.position.z = z1 - 0.46;
+  const plaqueL = new THREE.Mesh(new THREE.PlaneGeometry(4.6, 0.62), signMat('SINCE 1962', 1024, 138));
+  plaqueL.position.set(-13.8, 1.45, z1 + 0.235);
+  const plaqueR = new THREE.Mesh(new THREE.PlaneGeometry(4.6, 0.62), signMat('TAMASO MA JYOTIRGAMAYA', 1536, 138));
+  plaqueR.position.set(13.8, 1.45, z1 + 0.235);
+  scene.add(nameFront, nameBack, crestF, crestB, plaqueL, plaqueR);
+
+  // the guard house just inside, west of the gate
+  {
+    const GX = -12;
+    const GZ = 41.45;
+    B.box(3.4, 0.3, 2.9, 'maroon', GX, 0, GZ);
+    B.box(3.2, 2.5, 2.7, 'white', GX, 0.3, GZ);
+    B.box(0.04, 1.0, 1.7, 'glass', GX + 1.62, 1.2, GZ); // watching the gate
+    B.box(0.06, 1.1, 1.8, 'green', GX + 1.6, 1.15, GZ);
+    B.box(1.2, 0.9, 0.04, 'glass', GX + 0.4, 1.3, GZ + 1.37);
+    B.box(0.9, 2.0, 0.05, 'doorWood', GX - 0.6, 0.3, GZ - 1.37);
+    B.box(3.9, 0.2, 3.4, 'maroon', GX, 2.8, GZ);
+    B.cyl(0.9, 0.2, 'white', GX, 3.0, GZ, 18);
+    B.add(new THREE.SphereGeometry(0.9, 18, 8, 0, Math.PI * 2, 0, Math.PI / 2), 'white', GX, 3.2, GZ, { sy: 0.9 });
+    B.add(new THREE.SphereGeometry(0.1, 8, 6), 'gold', GX, 4.08, GZ);
+    const sec = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 0.3), new THREE.MeshStandardMaterial({ map: signTexture('SECURITY', { w: 512, h: 110, bg: '#1d2b4f', fg: '#f3d888', font: '700 70px Arial, sans-serif' }), roughness: 0.5 }));
+    sec.position.set(GX + 1.63, 2.45, GZ);
+    sec.rotation.y = Math.PI / 2;
+    scene.add(sec);
+  }
+  // the median between the walkers' lane (west) and the vehicle lane, with bollards; the barrier's post at its end
+  B.box(0.5, 0.18, 2.1, 'maroon', -0.5, 0, 41.95);
+  for (const z of [41.55, 42.65]) {
+    B.cyl(0.08, 0.85, 'white', -0.5, 0.18, z, 10);
+    B.cyl(0.085, 0.08, 'kerbYellow', -0.5, 0.86, z, 10);
+  }
+  B.box(0.34, 1.05, 0.34, 'white', -0.5, 0.18, 40.95);
+  B.box(0.42, 0.25, 0.42, 'charcoal', -0.5, 1.0, 40.95);
+  const boom = new THREE.Group();
+  {
+    const red = new THREE.MeshStandardMaterial({ color: '#c62828', roughness: 0.5 });
+    const white = new THREE.MeshStandardMaterial({ color: '#f4f4f0', roughness: 0.5 });
+    for (let k = 0; k < 8; k++) {
+      const seg = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.1, 0.07), k % 2 ? white : red);
+      seg.position.x = 0.25 + k * 0.9 + 0.45;
+      seg.castShadow = true;
+      boom.add(seg);
+    }
+    boom.position.set(-0.5, 1.12, 40.95);
+    scene.add(boom);
+  }
+
+  // ---- the fountain on the west lawn: a tiered fountain in a sandstone basin, in a round paved court ----
+  const water = new THREE.MeshStandardMaterial({ color: '#2f86ad', roughness: 0.06, metalness: 0.25, transparent: true, opacity: 0.9 });
+  const jet = new THREE.MeshStandardMaterial({ color: '#d4eef8', roughness: 0.1, transparent: true, opacity: 0.42, emissive: '#8fcde6', emissiveIntensity: 0.12, depthWrite: false });
+  water.onBeforeCompile = (sh) => {
+    sh.uniforms.uTime = { value: 0 };
+    water.userData.shader = sh;
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vWP;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvWP = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vWP;\nuniform float uTime;')
+      .replace(
+        '#include <normal_fragment_maps>',
+        `#include <normal_fragment_maps>
+        {
+          vec2 p = vWP.xz;
+          float a = sin(p.x * 3.1 + uTime * 1.7) + sin(p.y * 2.3 - uTime * 1.3) + sin((p.x + p.y) * 4.7 + uTime * 2.3) * 0.5;
+          float b = cos(p.y * 3.3 + uTime * 1.5) + cos(p.x * 2.1 - uTime * 1.1) + cos((p.x - p.y) * 5.1 + uTime * 2.1) * 0.5;
+          normal = normalize(normal + (viewMatrix * vec4(a * 0.05, 0.0, b * 0.05, 0.0)).xyz);
+        }`
+      );
+  };
+  const FX = -17;
+  const FZ = 21.5;
+  B.add(new THREE.CylinderGeometry(5.6, 5.6, 0.07, 56), 'maroon', FX, 0.035, FZ);
+  B.add(new THREE.CylinderGeometry(5.3, 5.3, 0.09, 56), 'pavers', FX, 0.045, FZ);
+  B.add(new THREE.CylinderGeometry(3.05, 3.15, 0.55, 48, 1, true), 'maroon', FX, 0.275, FZ);
+  B.add(new THREE.CylinderGeometry(2.85, 2.85, 0.5, 48, 1, true), 'maroon', FX, 0.25, FZ);
+  B.add(new THREE.TorusGeometry(2.97, 0.16, 6, 48).rotateX(Math.PI / 2), 'white', FX, 0.56, FZ);
+  B.add(new THREE.CylinderGeometry(2.86, 2.86, 0.04, 48), 'tiles', FX, 0.06, FZ);
+  B.cyl(0.36, 1.1, 'white', FX, 0.08, FZ, 16);
+  B.add(new THREE.CylinderGeometry(1.25, 0.45, 0.32, 32), 'white', FX, 1.34, FZ);
+  B.cyl(0.18, 0.75, 'white', FX, 1.5, FZ, 12);
+  B.add(new THREE.CylinderGeometry(0.62, 0.22, 0.22, 24), 'white', FX, 2.36, FZ);
+  B.add(new THREE.SphereGeometry(0.16, 12, 8), 'white', FX, 2.56, FZ);
+  for (let k = 0; k < 4; k++) {
+    const a = (k / 4) * Math.PI * 2 + Math.PI / 4;
+    const bx = FX + Math.cos(a) * 4.45;
+    const bz = FZ + Math.sin(a) * 4.45;
+    const ry = -a + Math.PI / 2;
+    B.box(1.8, 0.07, 0.42, 'wood', bx, 0.45, bz, { ry });
+    B.box(1.8, 0.32, 0.06, 'wood', bx + Math.cos(a) * 0.2, 0.62, bz + Math.sin(a) * 0.2, { ry });
+    for (const e of [-0.75, 0.75]) B.box(0.12, 0.45, 0.4, 'maroon', bx + Math.sin(a) * e, 0, bz - Math.cos(a) * e, { ry });
+    const ua = a + Math.PI / 4;
+    B.add(new THREE.CylinderGeometry(0.35, 0.22, 0.7, 14), 'maroon', FX + Math.cos(ua) * 5.0, 0.35, FZ + Math.sin(ua) * 5.0);
+    B.add(new THREE.SphereGeometry(0.42, 10, 8), 'shrub', FX + Math.cos(ua) * 5.0, 0.95, FZ + Math.sin(ua) * 5.0);
+  }
+  const fountain = new THREE.Group();
+  {
+    const add = (geo, mat, x, y, z) => {
+      const m = new THREE.Mesh(geo, mat);
+      m.position.set(x, y, z);
+      m.receiveShadow = true;
+      fountain.add(m);
+      return m;
+    };
+    add(new THREE.CircleGeometry(2.86, 48).rotateX(-Math.PI / 2), water, FX, 0.44, FZ);
+    add(new THREE.CircleGeometry(1.15, 32).rotateX(-Math.PI / 2), water, FX, 1.62, FZ);
+    add(new THREE.CircleGeometry(0.56, 24).rotateX(-Math.PI / 2), water, FX, 2.52, FZ);
+    add(new THREE.CylinderGeometry(1.26, 1.5, 1.18, 32, 1, true), jet, FX, 1.04, FZ); // water falling from the bowl
+    add(new THREE.CylinderGeometry(0.63, 0.75, 0.86, 24, 1, true), jet, FX, 2.1, FZ);
+    add(new THREE.CylinderGeometry(0.03, 0.07, 1.0, 8), jet, FX, 3.1, FZ); // the jet
+    add(new THREE.SphereGeometry(0.22, 12, 8), jet, FX, 3.62, FZ);
+    scene.add(fountain);
+  }
 
   // ---- road, footpaths, kerbs, zebra crossing ----
   B.box(1200, 0.06, 14, 'asphalt', 0, 0, ROAD_Z);
@@ -434,7 +594,8 @@ export function buildGrounds(scene, B, M, L, rng, P) {
     B.box(2.1, 0.1, 0.2, 'white', x, 1.5, LZ + 3.6);
     for (let k = 1; k < 12; k++) B.box(0.016, 1.45, 0.016, 'green', x - 0.9 + k * 0.15, 1.62, LZ + 3.6);
   }
-  const libraryFans = furnishLibrary(B);
+  furnishLibrary(B);
+  const estate = buildEstate(scene, B, M, rng);
   const libSign = new THREE.Mesh(new THREE.PlaneGeometry(4.6, 0.62), new THREE.MeshStandardMaterial({ map: signTexture('LIBRARY', { w: 1024, h: 138, font: '700 92px Georgia, serif' }), roughness: 0.5 }));
   libSign.position.set(LX, 4.0, LZ + 3.56);
   scene.add(libSign);
@@ -445,7 +606,7 @@ export function buildGrounds(scene, B, M, L, rng, P) {
     B.cyl(0.05, 2.6, 'darkMetal', SX + x, 0, SZ - 2, 6);
     B.cyl(0.05, 2.2, 'darkMetal', SX + x, 0, SZ + 2, 6);
   }
-  B.add(new THREE.BoxGeometry(21, 0.04, 4.8), 'blueRail', SX, 2.45, SZ, { rx: 0.1 });
+  B.add(new THREE.BoxGeometry(21, 0.06, 4.8), 'green', SX, 2.45, SZ, { rx: 0.1 });
   B.box(21, 0.06, 4.2, 'concrete', SX, 0, SZ);
   const wheel = new THREE.TorusGeometry(0.31, 0.022, 6, 18);
   const frameCols = ['darkMetal', 'maroon', 'blueRail', 'green', 'kerbBlack'];
@@ -485,10 +646,20 @@ export function buildGrounds(scene, B, M, L, rng, P) {
     ground,
     grass,
     lamps,
-    libraryFans,
+    estate,
     /** 0 = closed, 1 = open */
     setGate(open) {
       for (const { g, side } of gate) g.position.x = side * (0.02 + open * 7.6);
+    },
+    /** the barrier arm: 0 = down across the vehicle lane, 1 = up */
+    setBoom(up) {
+      boom.rotation.z = up * Math.PI * 0.47;
+    },
+    /** the fountain's water moves */
+    update(t) {
+      estate.update(t);
+      if (water.userData.shader) water.userData.shader.uniforms.uTime.value = t;
+      fountain.children[5].scale.y = 1 + Math.sin(t * 5.3) * 0.06;
     },
   };
 }

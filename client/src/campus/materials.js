@@ -57,11 +57,12 @@ export function createMaterials(L, { quality = 'high' } = {}) {
 
   const M = {
     // walls and trims (cream walls with maroon bands: a classic Indian school)
-    wall: plaster('#ecd4a4'),
-    wallShade: plaster('#e0c595'),
-    maroon: plaster('#8a3324', { amount: 0.7 }),
-    white: plaster('#f1ede2', { amount: 0.9 }),
-    plinth: weather(textured('concrete_color.jpg', 'concrete_normal.jpg', 2.5, { color: '#8d8579' }), grime, { amount: 1.2, ground: 1.4 }),
+    // ivory plaster with red sandstone bands, plinth and trim (the Lutyens palette of India's grand buildings)
+    wall: plaster('#f1e7d2', { amount: 0.35, ground: 0.45 }),
+    wallShade: plaster('#e9dcc1', { amount: 0.35, ground: 0.45 }),
+    maroon: weather(textured('concrete_color.jpg', 'concrete_normal.jpg', 1.6, { color: '#c46a4c', roughness: 0.82, normalScale: new THREE.Vector2(0.5, 0.5) }), grime, { amount: 0.35, ground: 0.6 }),
+    white: plaster('#f7f3ea', { amount: 0.3, ground: 0.3 }),
+    plinth: weather(textured('concrete_color.jpg', 'concrete_normal.jpg', 2.0, { color: '#a9583f', roughness: 0.85 }), grime, { amount: 0.5, ground: 0.8 }),
     roof: weather(textured('concrete_color.jpg', 'concrete_normal.jpg', 4, { color: '#bdb6aa' }), grime, { amount: 0.8, ground: 0 }),
     concrete: weather(textured('concrete_color.jpg', 'concrete_normal.jpg', 3, { color: '#c9c3b8' }), grime, { amount: 0.6, ground: 0.4 }),
     tiles: textured('tiles_color.jpg', 'tiles_normal.jpg', 1.2, { roughness: 0.55 }),
@@ -74,14 +75,18 @@ export function createMaterials(L, { quality = 'high' } = {}) {
     rooftiles: textured('rooftiles_color.jpg', 'rooftiles_normal.jpg', 2.4, { roughness: 0.8 }),
     wood: textured('wood_color.jpg', null, 1.6, { color: '#8a5a3c', roughness: 0.7 }),
     // inside the rooms
-    floorIn: textured('tiles_color.jpg', 'tiles_normal.jpg', 0.9, { color: '#e9dfcc', roughness: 0.42 }),
+    floorIn: textured('tiles_color.jpg', 'tiles_normal.jpg', 1.6, { color: '#f1eee8', roughness: 0.3, normalScale: new THREE.Vector2(0.5, 0.5) }),
+    // the furniture of a well-kept school: light oak desks, walnut panelling and cabinets
+    oak: textured('wood_color.jpg', null, 1.2, { color: '#ecd3a8', roughness: 0.42 }),
+    walnut: textured('wood_color.jpg', null, 1.4, { color: '#7a5034', roughness: 0.48 }),
     kota: textured('concrete_color.jpg', 'concrete_normal.jpg', 1.4, { color: '#9aa093', roughness: 0.5 }),
     deskWood: textured('wood_color.jpg', null, 1.1, { color: '#c08a55', roughness: 0.5 }),
     doorWood: new THREE.MeshStandardMaterial({ map: L.tex('wood_color.jpg'), color: '#7a4a2c', roughness: 0.6 }),
     dirt: textured('dirt_color.jpg', 'dirt_normal.jpg', 4, { roughness: 1 }),
 
     // painted metal, plastic and glass
-    green: std({ color: '#2f5a41', roughness: 0.45, metalness: 0.35 }),
+    // window frames, railings and gates: dark bronze
+    green: std({ color: '#2b2a27', roughness: 0.4, metalness: 0.55 }),
     blueRail: std({ color: '#2c4f7a', roughness: 0.45, metalness: 0.35 }),
     steel: std({ color: '#9aa0a6', roughness: 0.35, metalness: 0.85 }),
     darkMetal: std({ color: '#33373b', roughness: 0.5, metalness: 0.6 }),
@@ -104,6 +109,18 @@ export function createMaterials(L, { quality = 'high' } = {}) {
     shrub: std({ color: '#3d6b2e', roughness: 0.9 }),
     fabricBlue: std({ color: '#2b4f8c', roughness: 0.9, side: THREE.DoubleSide }),
     shutter: std({ color: '#8b9196', roughness: 0.55, metalness: 0.6 }),
+    chairShell: std({ color: '#203a66', roughness: 0.45 }),
+    chrome: std({ color: '#cfd4d8', roughness: 0.2, metalness: 0.95 }),
+    whiteMetal: std({ color: '#efede7', roughness: 0.38, metalness: 0.25 }),
+    charcoal: std({ color: '#2a2d31', roughness: 0.45, metalness: 0.4 }),
+    locker: std({ color: '#24467a', roughness: 0.4, metalness: 0.3 }),
+    lockerB: std({ color: '#7a2433', roughness: 0.4, metalness: 0.3 }),
+    blind: std({ color: '#e9e1cf', roughness: 0.92 }),
+    aluminium: std({ color: '#b9bdc1', roughness: 0.28, metalness: 0.9 }),
+    bezel: std({ color: '#121417', roughness: 0.22, metalness: 0.3 }),
+    mesh: std({ color: '#1e2024', roughness: 0.75 }),
+    sofa: std({ color: '#6b2a2f', roughness: 0.85 }),
+    carpet: std({ color: '#5b2f2c', roughness: 0.95 }),
   };
 
   // town houses: a handful of real paint colours, all weathered

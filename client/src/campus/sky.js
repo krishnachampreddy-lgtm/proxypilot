@@ -63,11 +63,11 @@ export function createSky(renderer, scene, { shadowSize = 2048, flare = true } =
   sun.castShadow = true;
   sun.shadow.mapSize.set(size, size);
   const sc = sun.shadow.camera;
-  sc.left = -150; sc.right = 150; sc.top = 130; sc.bottom = -130; sc.near = 20; sc.far = 900;
+  sc.left = -170; sc.right = 170; sc.top = 150; sc.bottom = -150; sc.near = 20; sc.far = 900;
   sun.shadow.bias = -0.00025;
   sun.shadow.normalBias = 0.35;
   sun.shadow.radius = 2.5;
-  sun.target.position.set(10, 0, -10);
+  sun.target.position.set(15, 0, -55);
   scene.add(sun, sun.target);
 
   const hemi = new THREE.HemisphereLight('#cfe0f5', '#6b5d45', 0.35);

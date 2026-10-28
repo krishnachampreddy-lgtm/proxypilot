@@ -38,8 +38,8 @@ export const CELLS = {
 };
 
 // ---------------- seats ----------------
-// five rows of two-seater desk-benches in four columns, facing the blackboard (towards -u)
-export const DESK_ROWS = [-1.3, -0.3, 0.7, 1.7, 2.7]; // u of each row, from the room centre
+// five rows of twin study desks (a chair each) in four columns, facing the smart board (towards -u)
+export const DESK_ROWS = [-1.45, -0.45, 0.55, 1.55, 2.55]; // u of each row, from the room centre (lockers along the back wall)
 export const DESK_COLS = [1.125, 2.475, 4.125, 5.475]; // v of each column (girls 0-1, boys 2-3)
 const AISLE_V = 3.3; // the middle aisle
 
@@ -75,7 +75,7 @@ function makeRoom(block, rc, f, kind) {
     inDoor: at(du, CD - 0.7), // just inside
     corr: at(du, 7.8), // corridor centre line
     front: at(du, 10.6), // out in the courtyard (see groundPath for the corner room)
-    frontAisle: at(rc - 1.95, AISLE_V), // the space in front of the first row
+    frontAisle: at(rc - 2.05, AISLE_V), // the space in front of the first row
     hinge: at(du - 0.5, CD - 0.11),
     theta: BLOCKS[block].theta,
     teacher: { p: at(rc - 2.8, AISLE_V + 0.4), heading: headingU(block) },
@@ -222,6 +222,25 @@ for (const r of ALL_ROOMS) {
   let best = 0;
   for (let i = 1; i < STAIRS.length; i++) if (corridorDist(r, STAIRS[i]) < corridorDist(r, STAIRS[best])) best = i;
   r.stair = best;
+}
+// The upstairs classrooms share the four staircases out evenly: a room goes to its nearest staircase unless that
+// one is already busier, so no stairwell has to carry twice the classes of another when everyone comes down for
+// assembly or goes home. (The rooms with only one sensible staircase are placed first.)
+{
+  const up = CLASSROOMS.filter((r) => r.floor > 0);
+  const near = (r) => STAIRS.map((s) => corridorDist(r, s)).sort((a, b) => a - b);
+  up.sort((a, b) => near(b)[1] - near(b)[0] - (near(a)[1] - near(a)[0]));
+  const load = STAIRS.map(() => 0);
+  for (const r of up) {
+    let best = 0;
+    let cost = Infinity;
+    STAIRS.forEach((s, k) => {
+      const c = corridorDist(r, s) + 3 * load[k];
+      if (c < cost) [cost, best] = [c, k];
+    });
+    r.stair = best;
+    load[best]++;
+  }
 }
 
 /**

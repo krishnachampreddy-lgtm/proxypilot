@@ -32,7 +32,7 @@ export { STOPS };
 export const prepared = lodReady;
 
 const HOME_VIEW = { cam: [78, 30, 92], target: [-6, 2, -6] };
-const IM_KEYS = [0, 1, 2, 3, 4, 5].map((i) => 'chalk' + i);
+const IM_KEYS = [0, 1, 2, 3, 4, 5].flatMap((i) => ['wbl' + i, 'wbr' + i]);
 
 /** a camera standing inside a room (block frame u, v, height above the floor) looking at another point in it */
 const inRoom = (r, cu, cv, ch, tu, tv, th) => {
@@ -45,7 +45,7 @@ const inRoom = (r, cu, cv, ch, tu, tv, th) => {
 // the rooms the camera looks into: a classroom from its back corner, the staff room, the HOD's office, the library
 export const INSIDE_VIEWS = {
   classroom: inRoom(CLASSROOMS[1], 3.25, 0.55, 2.25, -2.6, 3.6, 1.0),
-  classroom2: inRoom(CLASSROOMS[0], -3.0, 5.9, 2.3, 2.2, 2.2, 0.8),
+  classroom2: inRoom(CLASSROOMS[0], 1.2, 6.2, 2.35, -2.8, 2.2, 1.15), // (from the corridor side: the teacher and the class side on)
   staff: inRoom(STAFF, -3.1, 0.6, 2.2, 1.2, 3.6, 0.8),
   hod: inRoom(HOD, -2.7, 0.9, 1.95, 2.0, 3.5, 0.95),
   library: [[-73.6, 2.6, -41.4], [-61, 0.9, -46.8], { inside: true }],
@@ -66,11 +66,14 @@ export const SHOTS = {
   gather: [['stairs'], [[-20, 10, 14], [-4, 3, -16]], [[14, 12, 18], [2, 2, -10]]],
   assembly: [[[-28, 14, 16], [0, 1.5, -6]], [[18, 7, 12], [-2, 1.8, -8]], [[0, 16, 26], [0, 0.5, -4]]],
   toclass: [[[-18, 9, 10], [-6, 3, -18]], ['stairs'], [[20, 10, 12], [8, 3, -14]]],
-  classes: [['classroom'], [[58, 18, 12], [85, 0, -28]], ['staff'], [[12, 9, -6], [8, 6, -26]], ['hod'], ['classroom2']],
+  classes: [['classroom'], [[58, 18, 12], [85, 0, -28]], ['staff'], [[12, 9, -6], [8, 6, -26]], ['hod'], ['classroom2'], [[6, 4, 62], [0, 5, 44]]],
+  break: [[[-30, 12, 14], [0, 1.4, -4]], [[5, 9, 22], [-8, 1.2, 4]], [[-14, 4.2, 6], [-4, 1.2, -6]], ['classroom']],
+  classesB: [['classroom2'], [[58, 18, 12], [85, 0, -28]], ['library'], [[12, 9, -6], [8, 6, -26]], ['staff']],
   lunch: [[[-30, 12, 14], [0, 1.4, -4]], [[-14, 4.2, 6], [-4, 1.2, -6]], [[-42, 10, 18], [-62, 1, 2]], [[5, 9, 22], [-8, 1.2, 4]]],
   classes2: [['library'], [[60, 16, 6], [85, 0, -30]], ['classroom']],
   home: [[[-22, 10, 12], [0, 2, -12]], [[18, 13, 11], [31, 1.2, 31]], [[14, 8, 56], [2, 1.5, 36]], [[6, 7, 57], [-6, 1, 46]], [[-26, 9, 16], [0, 1.4, 4]]],
-  evening: [[[96, 30, 100], [-6, 3, -8]], [[60, 16, 10], [85, 0, -30]]],
+  after: [[[60, 16, 10], [85, 0, -30]], [[62, 7, -60], [46, 1.5, -80]], ['staff'], [[18, 9, -88], [0, 4, -60]], [[-42, 10, 18], [-62, 1, 2]], [[90, 95, 70], [0, 0, -70]]],
+  evening: [[[96, 30, 100], [-6, 3, -8]], [[-30, 14, -165], [0, 2, -110]], [[-48, 12, -118], [-72, 0, -100]], [[60, 16, 10], [85, 0, -30]]],
 };
 
 /** a director's shot as a view: shotView('arrival', 1), or shotView('inside', 'staff') */
@@ -80,7 +83,7 @@ export function shotView(phase, i) {
   return { cam: shot[0], target: shot[1], inside: Boolean(shot[2]?.inside) };
 }
 
-export function createCampus(container, { mode = 'hero', time = 'morning', startMinutes, onProgress, onReady, onClock, onBell, onInside, view, quality = 'auto' } = {}) {
+export function createCampus(container, { mode = 'hero', time = 'morning', startMinutes, onProgress, onReady, onClock, onBell, onStory, onInside, view, quality = 'auto' } = {}) {
   const still = mode === 'still';
   const forcedQ = new URLSearchParams(window.location.search).get('q');
   const P = still ? PROFILES[forcedQ] || PROFILES.still : pickProfile(quality);
@@ -122,8 +125,11 @@ export function createCampus(container, { mode = 'hero', time = 'morning', start
   M.glassStory.emissive = new THREE.Color('#ff3b2a');
   M.glassStory.emissiveIntensity = 0;
   const IM = interiorMaterials();
-  IM.chalkboards.forEach((m, i) => (M['chalk' + i] = m));
-  delete IM.chalkboards;
+  IM.boards.forEach((b, i) => {
+    M['wbl' + i] = b.l;
+    M['wbr' + i] = b.r;
+  });
+  delete IM.boards;
   for (const [k, v] of Object.entries(IM)) if (v) M[k] = v;
 
   const sky = createSky(renderer, scene, { shadowSize: P.shadow, flare: !still && P.name !== 'low' });
@@ -134,16 +140,16 @@ export function createCampus(container, { mode = 'hero', time = 'morning', start
   TT('start');
   const school = buildSchool(scene, B, M, rng);
   TT('school');
-  const fans = buildInteriors(B);
+  buildInteriors(B);
   TT('interiors');
   const grounds = buildGrounds(scene, B, M, L, rng, P);
   TT('grounds');
   const flag = buildFlag(scene, B, 0, -11);
   // furniture inside never needs to cast sun shadows (the walls and roof already do)
-  const INSIDE = ['floorIn', 'deskWood', 'deskMetal', 'dado', 'tube', 'almirah', 'poster', 'notice', 'books', 'screen', 'leather', 'fanWhite', 'kota', ...IM_KEYS];
+  const INSIDE = ['floorIn', 'deskWood', 'deskMetal', 'dado', 'almirah', 'poster', 'notice', 'books', 'screen', 'leather', 'fanWhite', 'kota', 'oak', 'walnut', 'chairShell', 'chrome', 'whiteMetal', 'charcoal', 'locker', 'lockerB', 'blind', 'aluminium', 'bezel', 'mesh', 'sofa', 'carpet', 'coverScreen', 'clockFace', 'crest', ...IM_KEYS];
   B.build(scene, { noCast: ['line', 'tiles', 'pavers', 'asphalt', 'track', 'court', 'courtOut', ...INSIDE] });
   TT('batched');
-  const movers = createMovers(scene, M, fans, grounds.libraryFans);
+  const movers = createMovers(scene, M);
   const TB = new Batch(M);
   buildTown(TB, M, rng, P);
   TB.build(scene, { castShadow: P.townShadows });
@@ -305,6 +311,10 @@ export function createCampus(container, { mode = 'hero', time = 'morning', start
     drift.angle = 0;
     shotTimer = o.inside ? 11 + rng() * 3 : 15 + rng() * 6;
   };
+  // following someone (the substitute walking to his class): { agent, room, t }
+  let chase = null;
+  const chaseCam = new THREE.Vector3();
+  const chaseTgt = new THREE.Vector3();
   let insideShot = false;
   const setInside = (on) => {
     if (on !== insideShot) onInside?.(on); // the page shows a "Back outside" button while the camera is in a room
@@ -356,16 +366,19 @@ export function createCampus(container, { mode = 'hero', time = 'morning', start
   let frameNo = 0;
   let shadowEvery = P.shadowEvery;
   let light = { warm: 0, lights: 0 };
+  let boom = 0;
+  let boomHold = 0;
   let minutesNow = startMinutes ?? (time === 'evening' ? 16 * 60 + 40 : DAY_START);
   const RED = new THREE.Color('#ff3b2a');
   const YELLOW = new THREE.Color('#f4c542');
 
   const applyTime = (rebuildEnv) => {
     light = sky.apply(minutesNow, { rebuildEnv, envDeg: P.envDeg });
-    M.glassLit.emissiveIntensity = light.lights * 0.95;
-    M.glassClearLit.emissiveIntensity = light.lights * 0.35;
-    M.glassClearLit.opacity = 0.16 + light.lights * 0.25;
-    M.tube.emissiveIntensity = 1.1 + light.lights * 1.6;
+    // at dusk the windows glow only as much as the rooms behind them are in use (an empty school is dark)
+    const inUse = Math.min(1, (movers.lightsOn ?? 1) * 1.6);
+    M.glassLit.emissiveIntensity = light.lights * 0.95 * inUse;
+    M.glassClearLit.emissiveIntensity = light.lights * 0.35 * inUse;
+    M.glassClearLit.opacity = 0.16 + light.lights * 0.25 * inUse;
     M.night.value = light.lights;
     M.lampOff.emissiveIntensity = light.lights * 6;
     school.dialMat.emissiveIntensity = light.lights * 0.5;
@@ -460,6 +473,11 @@ export function createCampus(container, { mode = 'hero', time = 'morning', start
     flag.update(elapsed);
     vehicles.update(dt);
     setGateHold(vehicles.gateTurning());
+    // the barrier lifts for a vehicle coming through, and comes down a couple of seconds after it's gone
+    boomHold = vehicles.nearBoom() ? 2.2 : boomHold - dt;
+    boom = Math.max(0, Math.min(1, boom + (boomHold > 0 ? dt * 1.4 : -dt * 0.7)));
+    grounds.setBoom(boom);
+    grounds.update(elapsed);
     if (people) {
       people.posed.update(elapsed);
       movers.update(dt, [people.crowd.agents, people.pool.agents], (room) => sim?.busy(room));
@@ -472,7 +490,35 @@ export function createCampus(container, { mode = 'hero', time = 'morning', start
     }
 
     // director: glide between shots of whatever is happening now
-    if (director && !touring && sim && performance.now() > userUntil) {
+    const directing = director && !touring && sim && performance.now() > userUntil;
+    if (directing && chase) {
+      // the story of the moment: follow the substitute across the courtyard; once he's on the stairs, cut into
+      // the classroom and watch him walk in
+      const a = chase.agent;
+      if (!a.active || a.tag !== 'cover') {
+        chase = null;
+      } else if (a.pos.y > 1.2 && !chase.inside) {
+        chase.inside = true;
+        const v = INSIDE_VIEWS[chase.room === 0 ? 'classroom2' : 'classroom'];
+        cutTo(v[0], v[1], true);
+        shotTimer = 26;
+      } else if (!chase.inside) {
+        chaseTgt.set(a.pos.x, 1.3, a.pos.z);
+        chaseCam.set(a.pos.x + 7.5, 6.8, a.pos.z + 9.5);
+        if (chase.t === 0) {
+          if (insideShot) cutTo(chaseCam.toArray(), chaseTgt.toArray(), false);
+          else flyTo(chaseCam.toArray(), chaseTgt.toArray(), 2.2);
+        } else if (!flight) {
+          const k = 1 - Math.exp(-dt * 2.2);
+          camera.position.lerp(chaseCam, k);
+          const t = controls ? controls.target : target;
+          t.lerp(chaseTgt, k);
+          camera.lookAt(t);
+        }
+        chase.t += dt;
+        shotTimer = 30;
+      }
+    } else if (directing) {
       shotTimer -= dt;
       const pid = sim.phase?.id;
       if (shotTimer <= 0 || (pid !== shotPhase && shotTimer < 12)) nextShot(pid);
@@ -487,7 +533,7 @@ export function createCampus(container, { mode = 'hero', time = 'morning', start
       if (flight.t >= 1) flight = null;
     } else if (controls) {
       // a slow sideways drift keeps every shot alive
-      if (director && !touring && !insideShot && performance.now() > userUntil) {
+      if (director && !touring && !insideShot && !chase && performance.now() > userUntil) {
         const t = controls.target;
         const off = camera.position.clone().sub(t);
         off.applyAxisAngle(new THREE.Vector3(0, 1, 0), dt * 0.018);
@@ -524,7 +570,15 @@ export function createCampus(container, { mode = 'hero', time = 'morning', start
     setVehicleZones(vehicles.zones);
     setVehicleBodies(vehicles.bodies);
     const T = (label) => window.__campusDebug && console.log('[people]', label, Math.round(performance.now()));
-    sim = createSim({ people, vehicles, grounds, scene, rng, onBell });
+    sim = createSim({
+      people, vehicles, grounds, scene, rng, onBell,
+      onStory: (s) => {
+        // the page shows the card; the director follows the substitute across the courtyard, then cuts into the class
+        onStory?.(s && { step: s.step, title: s.title, lines: s.lines });
+        if (s?.step === 'walking' && s.agent) chase = { agent: s.agent, room: s.room, t: 0 };
+        else if (!s) chase = null;
+      },
+    });
     sim.onClock((m, ph) => onClock?.(m, ph));
     sim.jumpTo(minutesNow);
     T('sim');
@@ -676,6 +730,30 @@ export function createCampus(container, { mode = 'hero', time = 'morning', start
       setInside(Boolean(v.inside));
       return this.view(v.cam, v.target);
     },
+    /** the heaviest meshes in the scene (testing) */
+    debugTris(n = 25) {
+      const list = [];
+      scene.traverse((o) => {
+        if (!o.isMesh || !o.visible) return;
+        const g = o.geometry;
+        const t = (g.index ? g.index.count : g.attributes.position.count) / 3;
+        const k = o.isInstancedMesh ? o.count : 1;
+        const mat = Array.isArray(o.material) ? o.material[0] : o.material;
+        list.push({ name: o.name || mat?.name || mat?.type, color: mat?.color?.getHexString?.(), tris: Math.round(t * k), cast: o.castShadow });
+      });
+      list.sort((a, b) => b.tris - a.tris);
+      return { total: list.reduce((s, m) => s + m.tris, 0), top: list.slice(0, n) };
+    },
+    /** draw calls and triangles in the last frame (testing) */
+    debugRender(cam, tgt) {
+      renderer.info.autoReset = false;
+      renderer.info.reset();
+      this.view(cam, tgt);
+      const r = renderer.info.render;
+      const out = { calls: r.calls, tris: r.triangles, geometries: renderer.info.memory.geometries, textures: renderer.info.memory.textures };
+      renderer.info.autoReset = true;
+      return out;
+    },
     /** point the camera somewhere and draw one frame (testing and stills) */
     view(cam, tgt) {
       camera.position.set(...cam);
@@ -728,7 +806,10 @@ export function createCampus(container, { mode = 'hero', time = 'morning', start
         sim?.update(1 / 30);
         vehicles.update(1 / 30);
         setGateHold(vehicles.gateTurning());
+        boomHold = vehicles.nearBoom() ? 2.2 : boomHold - 1 / 30;
+        boom = Math.max(0, Math.min(1, boom + (boomHold > 0 ? 1.4 : -0.7) / 30));
       }
+      grounds.setBoom(boom);
       minutesNow = sim?.minutes ?? minutesNow;
       if (still) sim?.setPaused(true);
     },
@@ -747,7 +828,7 @@ export function createCampus(container, { mode = 'hero', time = 'morning', start
       }, still ? 0 : 260);
     },
     setTime(name) {
-      this.jumpTo(name === 'evening' ? 15 * 60 + 18 : DAY_START);
+      this.jumpTo(name === 'evening' ? 16 * 60 + 40 : DAY_START);
     },
     setFrameShift(x, y) {
       shift = { x, y };
@@ -788,14 +869,11 @@ export function createCampus(container, { mode = 'hero', time = 'morning', start
       forcedStory = Boolean(s.story);
       if (s.story) storyClock = 0;
     },
-    /** look inside a room: 'classroom', 'staff', 'hod', 'library' (jumps to lesson time if school's not in) */
+    /** look inside a room: 'classroom', 'staff', 'hod', 'library' — as it is right now (after school, it's empty) */
     lookInside(name) {
       const v = INSIDE_VIEWS[name];
       if (!v) return;
       userUntil = performance.now() + 30000;
-      const m = sim?.minutes ?? minutesNow;
-      const inSession = (m > 8 * 60 + 40 && m < 12 * 60 + 30) || (m > 13 * 60 + 10 && m < 15 * 60 + 20);
-      if (!inSession) this.jumpTo(9 * 60 + 30);
       cutTo(v[0], v[1], true);
     },
     /** back out of a room to the view over the whole campus; the director carries on from there */

@@ -477,7 +477,7 @@ export function createCampus(container, { mode = 'hero', time = 'morning', start
     boomHold = vehicles.nearBoom() ? 2.2 : boomHold - dt;
     boom = Math.max(0, Math.min(1, boom + (boomHold > 0 ? dt * 1.4 : -dt * 0.7)));
     grounds.setBoom(boom);
-    grounds.update(elapsed);
+    grounds.update(elapsed, minutesNow);
     if (people) {
       people.posed.update(elapsed);
       movers.update(dt, [people.crowd.agents, people.pool.agents], (room) => sim?.busy(room));

@@ -216,8 +216,11 @@ export function buildVehicles(scene, rng, P) {
     buses: [0, 1, 2, 3].map(() => make(bus, DIMS.bus)),
     autos: [0, 1, 2, 3, 4, 5].map(() => make(auto, DIMS.auto)),
     cars: [0, 1, 2].map((i) => make(cars[i], DIMS.car)),
+    // parents' cars: they drop their children off in the morning at the drop-off canopy and collect them after school
+    parents: [3, 4, 5, 0].map((i) => make(cars[i], DIMS.car)),
   };
-  const fleetList = [...fleet.buses, ...fleet.autos, ...fleet.cars];
+  for (const d of [...fleet.autos, ...fleet.parents]) d.followBend = true;
+  const fleetList = [...fleet.buses, ...fleet.autos, ...fleet.cars, ...fleet.parents];
 
   // through traffic on the main road (it waits while a school bus turns at the gate)
   const traffic = [];
@@ -275,6 +278,9 @@ export function buildVehicles(scene, rng, P) {
     const fz = Math.cos(r);
     const p = d.obj.position;
     const ahead = 1.6 + d.speed * 0.9;
+    // (round a tight loop, like the drop-off's, the strip ahead follows the bend it's driving, a box every
+    // metre and a half: a straight strip would cut across the loop into the lane going the other way)
+    if (d.followBend && d.curve) return bendBlocker(d, fx, fz, ahead);
     // the vehicle's footprint stretched forward by the stopping distance (plus a little elbow room)
     corners(p.x + fx * (ahead / 2), p.z + fz * (ahead / 2), fx, fz, d.dims.len / 2 + ahead / 2, d.dims.wid / 2 + 0.3, A);
     for (const o of others) {
@@ -290,6 +296,32 @@ export function buildVehicles(scene, rng, P) {
       if (boxesTouch(fx, fz, ofx, ofz)) {
         d.blockGap = along - halfAlong(o, fx, fz) - d.dims.len / 2;
         return o;
+      }
+    }
+    return null;
+  };
+
+  const bendBlocker = (d, fx, fz, ahead) => {
+    const p = d.obj.position;
+    // its own front half, then boxes along the route ahead
+    const boxes = [{ x: p.x + fx * (d.dims.len / 4), z: p.z + fz * (d.dims.len / 4), fx, fz, hl: d.dims.len / 4 + 0.1 }];
+    for (const q of ahead_(d, d.dims.len / 2 + 0.75, d.dims.len / 2 + ahead, 1.5)) boxes.push({ x: q.x, z: q.z, fx: q.fx, fz: q.fz, hl: 0.8 });
+    for (const o of others) {
+      if (o === d || !o.obj.visible) continue;
+      const rx = o.obj.position.x - p.x;
+      const rz = o.obj.position.z - p.z;
+      const along = rx * fx + rz * fz;
+      if (along <= 0) continue; // only what's in front
+      const ro = o.obj.rotation.y;
+      const ofx = Math.sin(ro);
+      const ofz = Math.cos(ro);
+      corners(o.obj.position.x, o.obj.position.z, ofx, ofz, o.dims.len / 2, o.dims.wid / 2, Bc);
+      for (const b of boxes) {
+        corners(b.x, b.z, b.fx, b.fz, b.hl, d.dims.wid / 2 + 0.3, A);
+        if (boxesTouch(b.fx, b.fz, ofx, ofz)) {
+          d.blockGap = along - halfAlong(o, fx, fz) - d.dims.len / 2;
+          return o;
+        }
       }
     }
     return null;
@@ -315,6 +347,7 @@ export function buildVehicles(scene, rng, P) {
     }
     return out;
   };
+  const ahead_ = (d, from, to, step) => ahead(d, from, to, step);
   const pedBlock = (d) => {
     const reach = d.dims.len / 2 + 1.2 + d.speed * 0.7;
     const half = d.dims.wid / 2 + 0.45;
@@ -345,11 +378,21 @@ export function buildVehicles(scene, rng, P) {
   };
 
   let gateBusy = false;
+  let dropBusy = false;
+  let busGate = null; // x of the buses' gate while a bus turns in or out there (else null)
   return {
     group,
     fleet,
     setGateBusy(b) {
       gateBusy = b;
+    },
+    /** a bus is turning in or out at the buses' gate at x (null: nobody is) — the road traffic waits */
+    setBusGateBusy(x) {
+      busGate = x;
+    },
+    /** a car or an auto is turning in or out at the drop-off gate (the road traffic waits) */
+    setDropBusy(b) {
+      dropBusy = b;
     },
     /** who's on foot (lists of people, checked by the vehicles) */
     setPedestrians(fn) {
@@ -409,8 +452,10 @@ export function buildVehicles(scene, rng, P) {
       return true;
     },
     /** true when no road traffic in the near lane is about to pass x (an auto waits for a gap before pulling out) */
-    laneClear(x) {
+    laneClear(x, school = false) {
       for (const t of traffic) if (t.dir > 0 && t.v > 0.5 && t.x > x - 30 && t.x < x + 8) return false; // (traffic already waiting for us is fine)
+      // (and, if asked, the school's own cars and autos driving along the near lane)
+      if (school) for (const d of fleetList) if (d.active && d.obj.visible && d.obj.position.z > 47.6 && Math.sin(d.obj.rotation.y) > 0.5 && d.obj.position.x > x - 30 && d.obj.position.x < x + 8) return false;
       return true;
     },
     /** true when no vehicle is within r metres of (x, z) — used before a vehicle sets off onto the road */
@@ -426,6 +471,7 @@ export function buildVehicles(scene, rng, P) {
       fleet.buses.forEach((d, i) => add(d, 'bus' + i));
       fleet.autos.forEach((d, i) => add(d, 'auto' + i));
       fleet.cars.forEach((d, i) => add(d, 'car' + i));
+      fleet.parents.forEach((d, i) => add(d, 'parent' + i));
       traffic.forEach((t, i) => add(t, 'traffic' + i));
       return out;
     },
@@ -473,6 +519,15 @@ export function buildVehicles(scene, rng, P) {
         const stopLine = t.dir > 0 ? -22 : 22;
         const toLine = (stopLine - t.x) * t.dir;
         if (gateBusy && toLine > 0 && toLine < 16) want = Math.min(want, toLine * 0.7);
+        // (and at the drop-off gate, further down the road)
+        const dropLine = t.dir > 0 ? -72 : -40;
+        const toDrop = (dropLine - t.x) * t.dir;
+        if (dropBusy && toDrop > 0 && toDrop < 16) want = Math.min(want, toDrop * 0.7);
+        // (and at the buses' gate)
+        if (busGate !== null) {
+          const toBus = (busGate - t.dir * 20 - t.x) * t.dir;
+          if (toBus > 0 && toBus < 16) want = Math.min(want, toBus * 0.7);
+        }
         for (const o of traffic) {
           if (o === t || o.dir !== t.dir) continue;
           const gap = (o.x - t.x) * t.dir - (o.dims.len + t.dims.len) / 2; // bumper to bumper

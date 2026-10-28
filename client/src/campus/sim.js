@@ -3,6 +3,7 @@ import { FL } from './school.js';
 import { PHASES, DAY_START, DAY_END, phaseAt, clockLabel, phaseLabel, TIMES, PERIODS, CHANGEOVERS, isLessons, speedAt, periodAt } from './day.js';
 import { CLASSROOMS, STAIRS, FEET, STAFF, HOD, LIBRARY, BLOCKS, corridorPath } from './rooms.js';
 import { MALE_TEACHERS, FEMALE_TEACHERS } from './people.js';
+import { DROP, DROP_WALK, BUS_GATE } from './grounds.js';
 
 /*
   A school day for a thousand-plus students, from the gate opening to the gate closing.
@@ -45,15 +46,22 @@ const hm = (h, m = 0) => h * 60 + m;
 const LANES = [25.2, 28.8, 32.4, 36.0];
 const PARK_X = 30;
 const busSlot = (i) => ({ x: PARK_X, z: LANES[i] });
+// the buses have their own gate at the east end of the bay: in off the road (a left turn), down beside the bay and
+// into it nose first; out again round the west end of the bay, along the lane by the wall and back out of their gate
+// (another left turn) — so they never cross the walkers at the main gate
+const BX = BUS_GATE.x;
 const busIn = (s) => [
-  [-120, 49.5], [-30, 49.5], [-12, 49.4], [-4.5, 48.4], [-0.4, 46.2], [1.6, 43.4], [4.5, 40.6], [10, 39.5], [44, 39.5], [47.6, 38.7], [48.6, 37.0],
-  ...(s.z < 34 ? [[48.7, s.z + 2.2]] : []),
-  [46.2, s.z + 0.25], [42, s.z], [s.x, s.z],
+  [-120, 49.5], [30, 49.5], [BX - 8, 49.4], [BX - 2.8, 48.3], [BX - 0.4, 46], [BX, 43.4], [BX, 40.4], [BX - 0.4, 37.0],
+  ...(s.z < 34 ? [[BX - 0.3, s.z + 2.2]] : []),
+  [BX - 2.8, s.z + 0.25], [42, s.z], [s.x, s.z],
 ];
 const busOut = (s) => [
-  [s.x, s.z], [s.x - 6, s.z], [16, s.z], [10.6, s.z + 1.2],
-  ...(s.z + 4 < 37.5 ? [[8.3, s.z + 4]] : []),
-  [7.6, 38.5], [5.6, 41.0], [3.2, 43.0], [2.7, 45.2], [5, 47.6], [12, 49.5], [60, 49.5], [160, 49.5],
+  [s.x, s.z], [s.x - 6, s.z], [16, s.z],
+  // (round the west end of the bay: a wide sweep for the bays further from the wall, a tighter loop for the last)
+  ...(s.z < 34
+    ? [[11.2, s.z + 0.6], [8.2, s.z + 3], ...(s.z + 3 < 35.5 ? [[7.5, (s.z + 40.6) / 2]] : []), [7.7, 37.6], [9.4, 39.4]]
+    : [[11.8, s.z - 0.6], [8.4, s.z - 0.1], [6.8, 38.0], [8.4, 39.6]]),
+  [13.5, 39.8], [40, 39.8], [BX - 3.8, 40.1], [BX - 0.8, 41.8], [BX, 44.2], [BX + 0.6, 46.6], [BX + 3, 48.6], [BX + 8, 49.5], [160, 49.5],
 ];
 // the door is at the front on the left; children walk up the aisle beside the bus
 const busDoor = (s) => V(s.x - 3.3, s.z + 1.6);
@@ -66,20 +74,32 @@ const carIn = (x) => [[-120, 49.5], [-30, 49.5], [-12, 49.4], [-4.5, 48.4], [-0.
 const carBackOut = (x) => [[x, 34.8], [x, 36.6], [x - 1.4, 38.4], [x - 4.2, 38.8]];
 const carOut = (x) => [[x - 4.2, 38.8], [-10, 38.8], [-3, 39.2], [1.2, 40.6], [2.2, 43.4], [1.0, 46.4], [-4, 50.8], [-14, 56.5], [-150, 56.5]];
 
-// ---------- autos stop at the kerb just outside the gate and queue behind each other ----------
-const AUTO_STOP = [-6, 47.0];
-const autoIn = [[-110, 49.5], [-30, 49.5], [-14, 47.4], AUTO_STOP];
-const autoOut = [AUTO_STOP, [0, 47.6], [8, 49.3], [20, 49.5], [160, 49.5]];
+// ---------- the drop-off: autos and parents' cars come in at their own gate, round a one-way loop (clockwise, as
+// Indian traffic goes round), set the children down at the canopy and drive out again ----------
 const AUTO_SEATS = 4;
+const CAR_SEATS = 2;
+/** points round the loop, from angle a0 down to a1 (degrees; clockwise from above) */
+const loop = (a0, a1) => {
+  const out = [];
+  for (let a = a0; a >= a1 - 0.01; a -= 15) out.push([DROP.x + Math.cos((a * Math.PI) / 180) * DROP.r, DROP.z + Math.sin((a * Math.PI) / 180) * DROP.r]);
+  return out;
+};
+const DROP_IN = [[-112, 49.5], [-68, 49.5], [-60, 49.3], [-55.2, 47.6], [-54.1, 44.6], ...loop(75, -90)];
+const DROP_OUT = [[DROP.x, DROP.z - DROP.r], ...loop(-105, -255), [-58.3, 43.4]];
+const DROP_ROAD = [[-58.3, 43.4], [-58.7, 46.4], [-56.8, 48.9], [-50, 49.5], [160, 49.5]];
+/** where children stand under the canopy (two rows of places, an arm's length apart), and their path to the courtyard */
+const WAIT_SLOTS = [];
+for (let r = 0; r < 2; r++) for (let k = 0; k < 12; k++) WAIT_SLOTS.push({ x: DROP.x - 4.6 + k * 0.64 + r * 0.32, z: 23.62 + r * 0.6, kid: null });
+const WAIT_LANE = 24.85; // (in front of the rows: they walk along here to their place, and from it to their ride)
+const DROP_PATH = [V(-52.5, 24.3), ...DROP_WALK.map(([x, z]) => V(x, z))];
 
 // ---------- places ----------
 // people use the west half of the gate and the drive; buses keep to the east half
 // (walkers keep to the lane west of the median in the gateway; vehicles use the east half)
 const GATE_IN = [V(-2.2, 43.2), V(-1.9, 30), V(-1.3, 14), V(0.6, 4)];
-const GATE_OUT = [V(-1.3, 14), V(-1.9, 30), V(-2.2, 43.2)];
 const COURTYARD_IN = V(0.6, 4);
 /** somewhere across the courtyard's wide front opening (so groups don't all funnel through one spot) */
-const courtyardGap = (rng) => V(0.6 + (rng() - 0.5) * 5.5, 4 + (rng() - 0.5) * 1.6);
+const courtyardGap = (rng) => V(0.6 + (rng() - 0.5) * 8, 4 + (rng() - 0.5) * 2.2);
 // places where friends stand about at lunch: the courtyard and the front lawns
 const LUNCH_AREAS = [
   { x0: -20, x1: 20, z0: -19, z1: 1.5, not: (x, z) => (Math.abs(x) < 3.2 && z > -14.5 && z < -7.5) || (Math.abs(x) < 7 && z < -14.5) },
@@ -185,7 +205,12 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell, onSto
   const WATCH = { x: -9.75, z: 41.6 }; // (beside the guard house, facing the gate)
   const watchman = posed.slot(posed.group(WATCH.x, FEET.ground + 1, WATCH.z, 3), { kind: 'guard', pose: 'stand', x: WATCH.x, y: FEET.ground, z: WATCH.z, heading: Math.atan2(0 - WATCH.x, 46 - WATCH.z) });
   posed.set(watchman, true);
+  // and a second guard at the drop-off gate, who waves the cars and autos in and out
+  const WATCH2 = { x: -49.6, z: 41.4 };
+  const watchman2 = posed.slot(posed.group(WATCH2.x, FEET.ground + 1, WATCH2.z, 3), { kind: 'guard', pose: 'stand', x: WATCH2.x, y: FEET.ground, z: WATCH2.z, heading: Math.atan2(DROP.x - WATCH2.x, 44.5 - WATCH2.z) });
+  posed.set(watchman2, true);
   let signalT = 0;
+  let signal2T = 0;
   const asmGroup = posed.group(0, FEET.ground + 1, -5, 28);
   const assemblyTeachers = CLASSROOMS.map((_, c) => posed.slot(asmGroup, { kind: [...MALE_TEACHERS, ...FEMALE_TEACHERS][(c * 7 + 5) % 6], pose: 'stand', x: lineX(c), y: FEET.ground, z: -8.78, heading: Math.PI }));
   const reserveSeat = (cls, kind) => {
@@ -790,7 +815,10 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell, onSto
     const lat = LAT[n];
     for (let k = 0; k < n; k++) arriveToSchool(start, via, true, { cls, lat: lat[k], k, kind });
   };
-  const walkerFrom = (side) => [SQ(side * (30 + rng() * 34), 45.45, FEET.ground, 0.45), [SQ(side * 2.4, 45.45, FEET.ground, 0.45), ...GATE_IN]];
+  /** where someone on foot comes from or goes to along the road (never as far as the drop-off gate to the west, or the
+   *  buses' gate to the east: nobody on foot has to cross either) */
+  const roadEnd = (side) => (side < 0 ? -(30 + rng() * 17) : 26 + rng() * 16);
+  const walkerFrom = (side) => [SQ(roadEnd(side), 45.45, FEET.ground, 0.45), [SQ(side * 2.4, 45.45, FEET.ground, 0.45), ...GATE_IN]];
 
   let walkSchedule = [];
   const WALK_SPEED = 1.5; // metres a second for a group walking in (see evenPace)
@@ -801,7 +829,7 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell, onSto
    * who'd have arrived are already at their desks.
    */
   const buildWalkSchedule = (fromMinute, jumping = false) => {
-    const walkers = N - busCap * F.buses.length - AUTO_SEATS * F.autos.length;
+    const walkers = N - busCap * F.buses.length - AUTO_SEATS * F.autos.length - 1.5 * F.parents.length;
     const list = [];
     let left = walkers;
     while (left > 0) {
@@ -824,7 +852,7 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell, onSto
       }
       const dist = ((fromMinute - g.t) / speed) * WALK_SPEED;
       const side = rng() < 0.5 ? -1 : 1;
-      const pts = [SQ(side * (30 + rng() * 34), 45.45, FEET.ground, 0.45), SQ(side * 2.4, 45.45, FEET.ground, 0.45), ...GATE_IN];
+      const pts = [SQ(roadEnd(side), 45.45, FEET.ground, 0.45), SQ(side * 2.4, 45.45, FEET.ground, 0.45), ...GATE_IN];
       // where along the way in they'd be by now
       let d = dist;
       let i = 0;
@@ -859,13 +887,15 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell, onSto
       },
     });
   };
+  const convoy = []; // buses waiting their turn to pull out
   const busDepart = (i) => {
     const b = F.buses[i];
     if (!b.obj.visible || b.active) return;
     b.boarding = false;
     b.departAt = null;
     // anyone still on the way to this bus has missed it, and walks home instead
-    for (const a of crowd.agents) if (a.active && a.tag === 'toBus' && a.data?.bus === i) walkHome(a);
+    // (from the courtyard side of the hedge, out through the gap in it)
+    for (const a of crowd.agents) if (a.active && a.tag === 'toBus' && a.data?.bus === i) walkHome(a, a.pos.z < 9.8 ? [courtyardGap(rng), V(-1.3, 14)] : []);
     b.drive(busOut(b.slot), { max: 8, onEnd: () => (b.obj.visible = false) });
   };
   const parkBus = (i) => {
@@ -915,42 +945,80 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell, onSto
     c.active = false;
     c.place();
   };
-  /** an auto comes to the gate: in the morning it drops children, in the afternoon it waits for its riders */
-  const autoRun = (i, dropping) => {
-    const a = F.autos[i];
-    a.load = 0;
-    a.dropping = dropping;
-    a.boarding = false;
-    setOff(a, autoIn, {
-      max: 8,
+  /**
+   * an auto or a parent's car comes in at the drop-off gate and round the loop to the canopy: in the morning it
+   * sets its children down (they walk along the path to the courtyard), after school it waits for its riders
+   */
+  const DROPPERS = [...F.autos, ...F.parents];
+  F.autos.forEach((a) => (a.seats = AUTO_SEATS));
+  F.parents.forEach((c) => (c.seats = CAR_SEATS));
+  /** cars and autos inside the drop-off (or on their way in): no more than DROP_MAX at a time, so the queue never backs out onto the road */
+  const DROP_MAX = 4;
+  const inDrop = () => DROPPERS.reduce((n, d) => n + (d.obj.visible && !d.onRoad ? 1 : 0), 0);
+  const dropRun = (v, dropping) => {
+    v.load = 0;
+    v.dropping = dropping;
+    v.boarding = false;
+    v.stopped = false;
+    v.leaving = false;
+    v.onRoad = false;
+    v.due = !dropping;
+    // (waits down the road, out of sight, till there's room in the loop)
+    soon(0, () => {
+      if (v.obj.visible || inDrop() >= DROP_MAX || !vehicles.clearAt(DROP_IN[0][0], DROP_IN[0][1], 12)) return false;
+      v.due = false;
+      v.drive(DROP_IN, dropOpts(v, dropping));
+      return true;
+    }, 2400);
+  };
+  const dropOpts = (v, dropping) => ({
+      max: 7,
       onEnd: () => {
-        a.stopped = true;
-        a.waitT = 0;
+        v.stopped = true;
+        v.waitT = 0;
         if (dropping) {
-          // four children climb out and walk in together
+          // out they climb on the canopy side and walk in together
           const cls = pickClass();
           const kind = rng() < 0.5 ? 'boy' : 'girl';
-          for (let k = 0; k < AUTO_SEATS; k++) later(0.4 + k * 0.5, () => arriveToSchool(V(a.obj.position.x - 0.6 + k * 0.4, 46.0), [V(-2.6, 44.8), ...GATE_IN], true, { cls, kind, lat: LAT[4][k], k }));
-          a.leaveIn = 4.5;
+          const n = v.seats === AUTO_SEATS ? AUTO_SEATS : 1 + (rng() < 0.55 ? 1 : 0);
+          for (let k = 0; k < n; k++) {
+            later(0.5 + k * 0.55, () => {
+              const kid = arriveToSchool(V(v.obj.position.x - 0.5 + k * 0.35, 26.1), [V(v.obj.position.x - 0.4 + k * 0.3, 24.6), ...DROP_PATH], true, { cls, kind, lat: LAT[n][k], k });
+              if (kid) kid.data.drop = true;
+            });
+          }
+          v.leaveIn = 2.5 + n * 0.7;
         }
       },
-    });
-  };
-  const autoLeave = (a) => {
-    if (a.leaving) return;
-    a.leaving = true;
-    // wait for a gap in the traffic before pulling out
-    soon(0, () => {
-      if (!vehicles.laneClear(a.obj.position.x)) return false;
-      a.stopped = false;
-      a.leaving = false;
-      a.drive(autoOut, { max: 8, onEnd: () => (a.obj.visible = false) });
-      return true;
+  });
+  const autoRun = (i, dropping) => dropRun(F.autos[i], dropping);
+  const parentRun = (i, dropping) => dropRun(F.parents[i], dropping);
+  const dropLeave = (v) => {
+    if (v.leaving) return;
+    v.leaving = true;
+    v.stopped = false;
+    v.drive(DROP_OUT, {
+      max: 6,
+      onEnd: () =>
+        // at the gate: wait for a gap in the traffic before pulling out onto the road
+        soon(0, () => {
+          if (!vehicles.laneClear(-58)) return false;
+          v.leaving = false;
+          v.onRoad = true;
+          v.drive(DROP_ROAD, { max: 8, onEnd: () => (v.obj.visible = false) });
+          return true;
+        }),
     });
   };
 
   // ---------- going home ----------
-  const autoWaiting = []; // children on the footpath waiting for an auto
+  const autoWaiting = []; // children under the canopy waiting for an auto or a parent's car
+  /** a child leaves their place in the rows (returns the place, if they had one) */
+  const freeSlot = (kid) => {
+    const slot = WAIT_SLOTS.find((w) => w.kid === kid);
+    if (slot) slot.kid = null;
+    return slot;
+  };
   let autoRiders = 0;
   let autoComing = 0; // children on their way to the auto stop
   const homeRoute = (a, from, side) => {
@@ -959,11 +1027,13 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell, onSto
     const fromBay = a.pos.x > 3 && a.pos.z > 22 && a.pos.z < 40 ? [V(3.6, a.pos.z)] : [];
     // (groups spread across the drive and the walkers' lane rather than all treading one line)
     const lane = (rng() - 0.5) * 3;
-    return [...from, ...fromBay, ...(inside ? [V(-1.9 + lane, Math.max(30, Math.min(a.pos.z, 40))), V(-2.3 + lane * 0.3, 43.2)] : []), SQ(side * 2.4, 45.45, FEET.ground, 0.45), SQ(side * (42 + rng() * 26), 45.45, FEET.ground, 0.45)];
+    // (out through the whole width of the walkers' side of the gateway, then each group finds its own line along
+    // the footpath, rather than everyone treading one spot)
+    return [...from, ...fromBay, ...(inside ? [V(-1.9 + lane, Math.max(30, Math.min(a.pos.z, 40))), V(-2.7 + lane * 0.8, 43.2)] : []), SQ(side * (2.6 + rng() * 2.2), 45.1 + rng() * 0.7, FEET.ground, 0.6), SQ(roadEnd(side), 45.1 + rng() * 0.7, FEET.ground, 0.6)];
   };
   const walkHome = (a, from = [], side = rng() < 0.5 ? -1 : 1) => {
     a.tag = 'walkHome';
-    route(a, homeRoute(a, from, side), { pace: 1.3, onArrive: release });
+    route(a, homeRoute(a, from, side), { pace: 1.4, onArrive: release });
   };
   /** a group of friends from one class decides how they're going home */
   const goHomeGroup = (members) => {
@@ -972,12 +1042,13 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell, onSto
     const busesOpen = F.buses.filter((b) => b.boarding && b.obj.visible && !b.active);
     const n = members.length;
     const roomy = busesOpen.filter((b) => b.expected + n <= busCap + 3);
-    if (r < 0.2 && roomy.length) {
+    // (the first classes down fill the buses, so the buses are away before the crowd walking home reaches the gate)
+    if (r < 0.42 && roomy.length) {
       // the bus with the fewest children so far (and seats for the whole group)
       const bus = roomy.reduce((m, b) => (b.expected < m.expected ? b : m), roomy[0]);
       const s = bus.slot;
       const bi = F.buses.indexOf(bus);
-      const pts = [courtyardGap(rng), V(1.4 + (rng() - 0.5) * 1.6, 14), V(2.6, 24), V(3.6, busAisle(s)), NW(s.x - 1.5, busAisle(s)), NW(s.x - 3.3, busAisle(s)), busDoor(s)];
+      const pts = [courtyardGap(rng), V(1.4 + (rng() - 0.5) * 1.6, 14), V(2.6, 24), V(3.6, busAisle(s)), E(s.x - 6.2, busAisle(s)), E(s.x - 3.3, busAisle(s)), busDoor(s)];
       members.forEach((m) => {
         bus.expected++;
         m.tag = 'toBus';
@@ -988,22 +1059,31 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell, onSto
         release(b);
       });
       // single file at the bus door
-      members.forEach((m, k) => m.path && m.path[pts.length - 2] && (m.path[pts.length - 2].hold = k * 0.7));
+      members.forEach((m, k) => m.path && m.path[pts.length - 2] && (m.path[pts.length - 2].hold = k * 0.5));
       return;
     }
-    if (r < 0.26 && autoRiders + n <= AUTO_SEATS * F.autos.length) {
-      const gap = courtyardGap(rng);
+    if (r < 0.49 && autoRiders + n <= AUTO_SEATS * F.autos.length + CAR_SEATS * F.parents.length) {
+      // home by auto or a parent's car: out to the drop-off canopy to wait
       members.forEach((m) => {
         autoRiders++;
         autoComing++;
         m.tag = 'toAuto';
-        const spot = V(AUTO_STOP[0] - 3 + rng() * 5, 45.1 + rng() * 0.7);
-        route(m, [gap, ...GATE_OUT, V(-2.4, 45.0), spot], {
+        const slot = WAIT_SLOTS.find((w) => !w.kid) && pick(WAIT_SLOTS.filter((w) => !w.kid));
+        if (!slot) {
+          // (every place under the canopy is taken: they walk instead, out through the gap in the hedge)
+          autoRiders--;
+          autoComing--;
+          walkHome(m, [courtyardGap(rng), V(-1.3 + (rng() - 0.5) * 4.4, 14)]);
+          return;
+        }
+        slot.kid = m;
+        m.data = { ...(m.data || {}), slot };
+        route(m, [V(-17 + rng() * 3, 4.6 + rng() * 1.2), ...DROP_PATH.slice(1).reverse(), V(Math.min(slot.x + 0.8, DROP_PATH[0].x), WAIT_LANE), E(slot.x, WAIT_LANE - 0.15), E(slot.x, slot.z)], {
           pace: evenPace(m, 1.25),
           onArrive: (b) => {
             autoComing = Math.max(0, autoComing - 1);
             b.tag = 'waitAuto';
-            route(b, [], { wait: 1e9, face: 0, talk: true });
+            route(b, [], { wait: 1e9, face: 0, talk: true }); // (facing the loop, watching for their ride)
             autoWaiting.push(b);
           },
         });
@@ -1013,7 +1093,7 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell, onSto
     // walking home together, left or right along the road
     const side = rng() < 0.5 ? -1 : 1;
     members.forEach((m) => (m.tag = 'walkHome'));
-    walkTogether(members, homeRoute(members[0], [courtyardGap(rng), V(-1.3 + (rng() - 0.5) * 4.4, 14)], side), { pace: 1.3 }, (b) => release(b));
+    walkTogether(members, homeRoute(members[0], [courtyardGap(rng), V(-1.3 + (rng() - 0.5) * 4.4, 14)], side), { pace: 1.4 }, (b) => release(b));
   };
 
   // ---------- other parts of the day ----------
@@ -1149,6 +1229,7 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell, onSto
     [hm(7, 16), () => carArrive(0)], [hm(7, 19), () => carArrive(1)], [hm(7, 23), () => carArrive(2)],
     ...F.buses.map((_, i) => [hm(7, 15.3) + i * 1.8, () => busArrive(i)]),
     ...F.autos.map((_, i) => [hm(7, 18) + i * 3.5, () => autoRun(i, true)]),
+    ...F.parents.map((_, i) => [hm(7, 19.8) + i * 4.6, () => parentRun(i, true)]),
     [TIMES.assemblyBell, () => ringBell('Assembly')],
     [TIMES.toClass, () => ringBell('To class')],
     // a bell at the start of every period (and the changeover between back-to-back ones)
@@ -1168,7 +1249,9 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell, onSto
       b.boarding = true;
       b.departAt = TIMES.busesLeave + i * 1.5; // a bus leaves once its children are on board
     })],
-    ...F.autos.map((_, i) => [TIMES.home + 1 + i * 1.2, () => autoRun(i, false)]),
+    // (parents and autos turn up through the first twenty minutes, and wait their turn to come in)
+    ...F.autos.map((_, i) => [TIMES.home + 3 + i * 3.4, () => autoRun(i, false)]),
+    ...F.parents.map((_, i) => [TIMES.home + 4.6 + i * 4.2, () => parentRun(i, false)]),
     ...F.cars.map((_, i) => [TIMES.teachersLeave + i * 2, () => carDepart(i)]),
   ];
 
@@ -1193,6 +1276,7 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell, onSto
         let seated = buildWalkSchedule(m, true);
         F.buses.forEach((_, i) => m > hm(7, 15.3) + i * 1.8 + 30 && (seated += busCap));
         F.autos.forEach((_, i) => m > hm(7, 18) + i * 3.5 + 20 && (seated += AUTO_SEATS));
+        F.parents.forEach((_, i) => m > hm(7, 19.8) + i * 4.6 + 20 && (seated += 1.5));
         fillSeats(Math.min(1, seated / (perClass * CLASSES)));
         for (let c = 0; c < CLASSES; c++) arrived[c] += seats[c].n;
       } else buildWalkSchedule(m);
@@ -1218,7 +1302,7 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell, onSto
       }
       // anyone still walking in (on the ground) is late: straight to their line, bag and all
       for (const a of crowd.agents) {
-        if (!(a.active && a.tag === 'arriving' && a.pos.y < 0.3 && a.data)) continue;
+        if (!(a.active && a.tag === 'arriving' && a.pos.y < 0.3 && a.data) || a.data.drop) continue; // (on the path from the drop-off: they go to their line when they get in)
         // (still outside, or in the gateway: in through the gate first, never through the wall; then past the
         // hedge by the front walk)
         const z = a.pos.z;
@@ -1297,7 +1381,10 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell, onSto
       const turns = stairTurns((c) => seats[c].n * 1.1, 50, 3);
       for (let c = 0; c < CLASSES; c++) emptyClass(c, turns[c], 0.8 + rng() * 1.2, { pace: 1.2, bag: true, tag: 'home' }, (members) => goHomeGroup(members));
       // jumped in after the autos were due: send them now
-      if (!fresh && m > TIMES.home + 1 && m < TIMES.home + 28) F.autos.forEach((_, i) => later(i * 2.5, () => autoRun(i, false)));
+      if (!fresh && m > TIMES.home + 1 && m < TIMES.home + 28) {
+        F.autos.forEach((_, i) => later(i * 2.5, () => autoRun(i, false)));
+        F.parents.forEach((_, i) => later(3 + i * 3, () => parentRun(i, false)));
+      }
       // a teacher sees the bus children on board
       if (m < TIMES.busesLeave + 6) {
         const t = pool.spawn([V(1.6, 16), V(3.2, 27.5), V(4.4, 29.2)], { teacher: true, tag: 'busDuty', wait: 9999, face: Math.PI / 2, pace: 1.0 });
@@ -1312,6 +1399,7 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell, onSto
       playFootball(8);
       basketball(6);
       cricket();
+      tennis();
       for (let k = 0; k < 8; k++) {
         const lapAt = Math.floor((k * trackLap.length) / 8);
         later(2 + k * 0.9, () => {
@@ -1363,7 +1451,7 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell, onSto
       if (a.data?.cls >= 0) {
         a.tag = 'toClass';
         goToClass(a, a.data.cls, BACK_FROM_TRACK, { pace: 1.4 });
-      } else walkHome(a, [...BACK_FROM_TRACK, V(14, 9.4)]);
+      } else walkHome(a, [...BACK_FROM_TRACK.slice(0, -1), V(12, 12.2), V(3.2, 12.6)]); // (along the path from the bus bay, outside the hedge)
     }
     sendIn((a) => a.tag === 'peTeacher');
   };
@@ -1377,21 +1465,35 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell, onSto
   };
   /** after school, cricket practice in the nets: in each net a bowler runs in again and again, the batsman waits */
   const NETS = [44, 48.2];
+  // a red ball for each net: bowled, it pitches and reaches the batsman, who swings and sends it into the netting
+  const cricketBalls = NETS.map(() => {
+    const m = new THREE.Mesh(new THREE.SphereGeometry(0.045, 10, 8), new THREE.MeshStandardMaterial({ color: '#9e1b1b', roughness: 0.4 }));
+    m.visible = false;
+    scene.add(m);
+    return { mesh: m, t: -1, bat: null };
+  });
   // (they change in the pavilion's dressing rooms and walk round outside the boundary rope to the nets)
   const NETS_WAY = [V(0.8, -62.2), V(1.2, -65.6), V(24, -67.4)];
   const bowlIn = (b, nx) =>
     route(b, [V(nx, -77.5)], {
       run: true,
-      onArrive: (c) => c.tag === 'cricket' && route(c, [V(nx + 0.45, -66.5)], { pace: 0.9, wait: 1.2, onArrive: (d) => d.tag === 'cricket' && bowlIn(d, nx) }),
+      onArrive: (c) => {
+        if (c.tag !== 'cricket') return;
+        // the ball's away
+        const cb = cricketBalls[NETS.indexOf(nx)];
+        if (cb.bat?.active && cb.bat.tag === 'cricket' && !cb.bat.path?.length) cb.t = 0;
+        route(c, [V(nx + 0.45, -66.5)], { pace: 0.9, wait: 1.2, onArrive: (d) => d.tag === 'cricket' && bowlIn(d, nx) });
+      },
     });
   const cricket = () => {
     NETS.forEach((nx, k) => {
       later(1.5 + k * 3, () => {
         const via = [...NETS_WAY, V(nx + 0.6, -65.4)];
-        const bat = pool.spawn([...via, V(nx, -85)], { teacher: false, tag: 'cricket', pace: 1.1 });
+        const bat = pool.spawn([...via, V(nx, -85)], { sport: 'bat', tag: 'cricket', pace: 1.1 });
         if (bat) bat.onArrive = (b) => b.tag === 'cricket' && route(b, [], { wait: 1e9, face: 0 });
+        cricketBalls[k].bat = bat;
         later(1.2, () => {
-          const bowl = pool.spawn([...via, V(nx + 0.45, -66.5)], { teacher: false, tag: 'cricket', pace: 1.1 });
+          const bowl = pool.spawn([...via, V(nx + 0.45, -66.5)], { sport: 'bowl', tag: 'cricket', pace: 1.1 });
           if (bowl) bowl.onArrive = (b) => b.tag === 'cricket' && bowlIn(b, nx);
         });
       });
@@ -1402,6 +1504,112 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell, onSto
       if (!a.active || a.tag !== 'cricket') continue;
       a.tag = 'leaving';
       route(a, [V(a.pos.x + 0.6, -65.4), ...NETS_WAY.slice().reverse()], { pace: 1.1, onArrive: release });
+    }
+  };
+  /** after school, tennis: on each court two players rally, running across their baseline to reach the ball */
+  const COURTS = [{ x: 116.7, z: -58 }, { x: 116.7, z: -22 }];
+  const rallies = COURTS.map((c) => {
+    const m = new THREE.Mesh(new THREE.SphereGeometry(0.035, 10, 8), new THREE.MeshStandardMaterial({ color: '#d7f23a', roughness: 0.6 }));
+    m.visible = false;
+    scene.add(m);
+    return { c, ball: m, players: [], shot: null, pause: 1 };
+  });
+  const tennis = () => {
+    rallies.forEach((r, k) => {
+      r.players = [];
+      r.shot = null;
+      r.pause = 3;
+      for (const s of [-1, 1]) {
+        later(1 + k * 2 + (s > 0 ? 1 : 0), () => {
+          const bz = r.c.z + s * 11.4;
+          const p = pool.spawn([V(107.6, r.c.z + s * 3), V(r.c.x - 3, r.c.z + s * 9), V(r.c.x, bz)], { sport: 'racket', tag: 'tennis', pace: 1.1 });
+          if (p) {
+            p.data = { side: s, baseZ: bz };
+            p.onArrive = (b) => {
+              if (b.tag !== 'tennis') return;
+              b.data.onCourt = true;
+              route(b, [], { wait: 1e9, face: s > 0 ? Math.PI : 0 });
+            };
+            r.players.push(p);
+          }
+        });
+      }
+    });
+  };
+  const stopTennis = () => {
+    for (const r of rallies) {
+      r.ball.visible = false;
+      r.shot = null;
+      r.players = [];
+    }
+    for (const a of pool.agents) {
+      if (!a.active || a.tag !== 'tennis') continue;
+      a.tag = 'leaving';
+      route(a, [V(a.pos.x - 3, a.pos.z), V(107.6, a.pos.z)], { pace: 1.1, onArrive: release });
+    }
+  };
+  /** the games' moving parts each frame: the rallies, the bowled balls, the swings */
+  const updateGames = (dt) => {
+    for (const r of rallies) {
+      const ready = r.players.length === 2 && r.players.every((p) => p.active && p.tag === 'tennis' && p.data?.onCourt);
+      if (!ready) {
+        r.ball.visible = false;
+        continue;
+      }
+      if (!r.shot) {
+        if ((r.pause -= dt) > 0) continue;
+        // a shot from one player across to the other, landing somewhere along their baseline
+        const from = r.players[r.serve = (r.serve ?? 0) ^ 1];
+        const to = r.players.find((p) => p !== from);
+        const tx = r.c.x + (rng() - 0.5) * 7;
+        r.shot = { from, to, x0: from.pos.x, z0: from.pos.z, x1: tx, z1: to.data.baseZ, t: 0, dur: 1.15 + rng() * 0.3, net: rng() < 0.08 };
+        route(to, [V(tx + 0.5 * to.data.side, to.data.baseZ)], { run: Math.abs(tx - to.pos.x) > 2.5, pace: 1.3, wait: 1e9, face: to.data.side > 0 ? Math.PI : 0 });
+        from.swingT = 0.35;
+      }
+      const sh = r.shot;
+      sh.t += dt / sh.dur;
+      const u = Math.min(1, sh.t);
+      const reach = sh.net ? 0.5 : 1;
+      const k = u * reach;
+      const x = sh.x0 + (sh.x1 - sh.x0) * k;
+      const z = sh.z0 + (sh.z1 - sh.z0) * k;
+      // up over the net, a bounce near the far baseline, and up again to the racket
+      const y = sh.net ? 1.0 + Math.sin(u * Math.PI * 0.5) * 0.3 - u * u * 1.2 : u < 0.75 ? 1.0 + Math.sin((u / 0.75) * Math.PI) * 1.5 - (u / 0.75) * 0.95 : 0.05 + Math.sin(((u - 0.75) / 0.25) * Math.PI * 0.5) * 0.85;
+      r.ball.visible = true;
+      r.ball.position.set(x, Math.max(0.04, y), z);
+      if (u >= 1) {
+        if (sh.net) r.pause = 2.2; // (into the net: a fresh serve)
+        else {
+          sh.to.swingT = 0.35;
+          r.serve = r.players.indexOf(sh.from); // (and back it comes)
+        }
+        r.shot = null;
+        if (!sh.net) r.pause = 0;
+      }
+    }
+    for (const cb of cricketBalls) {
+      if (cb.t < 0) {
+        cb.mesh.visible = false;
+        continue;
+      }
+      const nx = NETS[cricketBalls.indexOf(cb)];
+      cb.t += dt;
+      const t = cb.t;
+      cb.mesh.visible = true;
+      if (t < 0.45) cb.mesh.position.set(nx, 2.1 - (t / 0.45) * 2.05, -77.5 - (t / 0.45) * 5);
+      else if (t < 0.7) cb.mesh.position.set(nx, 0.05 + ((t - 0.45) / 0.25) * 0.6, -82.5 - ((t - 0.45) / 0.25) * 2.1);
+      else if (t < 1.5) {
+        const u = (t - 0.7) / 0.8;
+        cb.mesh.position.set(nx + Math.sin(u * 2) * 0.9, 0.65 + Math.sin(u * Math.PI) * 2.2, -84.6 + u * 6);
+      } else cb.t = -1;
+      if (t > 0.58 && t - dt <= 0.58 && cb.bat?.active) cb.bat.swingT = 0.4;
+    }
+    // a swing: a quick turn of the shoulders and back
+    for (const a of pool.agents) {
+      if (!a.active || !(a.swingT > 0)) continue;
+      a.swingT -= dt;
+      const p = 1 - Math.max(0, a.swingT) / 0.4;
+      a.heading = (a.face ?? a.heading) + Math.sin(p * Math.PI) * 1.2;
     }
   };
   /** teachers on duty at break and lunch: they stroll about the courtyard keeping an eye on things */
@@ -1525,6 +1733,7 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell, onSto
       // practice is over: the footballers, cricketers and basketball players head home, the meeting breaks up
       stopFootball();
       stopCricket();
+      stopTennis();
       sendIn((a) => a.tag === 'basket', 'west');
       endPE();
     }
@@ -1538,6 +1747,8 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell, onSto
     queue = [];
     walkSchedule = [];
     autoWaiting.length = 0;
+    convoy.length = 0;
+    for (const w of WAIT_SLOTS) w.kid = null;
     autoRiders = 0;
     autoComing = 0;
     arrived = new Array(CLASSES).fill(0);
@@ -1584,9 +1795,11 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell, onSto
         if (m > arrive - 12 && m <= arrive) later(i * 2, () => carArrive(i));
       }
     });
-    F.autos.forEach((a) => {
+    DROPPERS.forEach((a) => {
       a.active = false;
       a.obj.visible = false;
+      a.due = false;
+      a.onRoad = false;
       a.stopped = false;
       a.boarding = false;
       a.leaving = false;
@@ -1595,6 +1808,10 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell, onSto
     F.autos.forEach((_, i) => {
       const due = hm(7, 18) + i * 3.5;
       if (m > due && m < due + 8) later(i * 2, () => autoRun(i, true));
+    });
+    F.parents.forEach((_, i) => {
+      const due = hm(7, 19.8) + i * 4.6;
+      if (m > due && m < due + 8) later(1 + i * 2, () => parentRun(i, true));
     });
     gateOpen = m >= TIMES.gateOpen + 1 && m < TIMES.gateClose ? 1 : 0;
     grounds.setGate(gateOpen);
@@ -1608,7 +1825,7 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell, onSto
   let walkingIn = 0; // students on their way to class (counted twice a second)
   resetTo(DAY_START);
 
-  const busyList = [...F.buses, ...F.cars, ...F.autos];
+  const busyList = [...F.buses, ...F.cars];
   const gateUsers = [...F.buses, ...F.cars];
   return {
     get minutes() {
@@ -1671,6 +1888,8 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell, onSto
       // the watchman signals while a vehicle crosses the footpath (and keeps his hand up a moment after)
       signalT = vehicles.gateTurning() ? 1.6 : signalT - dt;
       watchman.pose = signalT > 0 ? 'point' : 'stand';
+      signal2T = DROPPERS.some((d) => d.active && d.obj.visible && Math.abs(d.obj.position.x - DROP.x) < 6 && d.obj.position.z > 42 && d.obj.position.z < 48) ? 1.4 : signal2T - dt;
+      watchman2.pose = signal2T > 0 ? 'point' : 'stand';
       officeT += dt;
       if (officeT > 0.5) {
         officeT = 0;
@@ -1722,62 +1941,78 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell, onSto
             const two = Math.min(2, b.unload);
             for (let k = 0; k < two; k++) {
               const lat = two === 2 ? LAT[2][k] : 0;
-              if (arriveToSchool(busDoor(s), [NW(s.x - 3.3, busAisle(s)), NW(3.6, busAisle(s)), V(2.2, 22), V(1.2, 12), COURTYARD_IN], true, { cls, kind, lat, k })) b.unload--;
+              if (arriveToSchool(busDoor(s).add(V(two === 2 ? (k ? 0.32 : -0.32) : 0, 0.12, 0)), [NW(s.x - 3.3, busAisle(s)), NW(3.6, busAisle(s)), V(2.2, 22), V(1.2, 12), COURTYARD_IN], true, { cls, kind, lat, k })) b.unload--;
             }
           }
         }
       }
-      // ---- buses leave once their children are on board (one at a time through the gate) ----
-      // (one bus pulling out of the bay at a time; at the gate they take turns with the cars)
-      let driving = false;
-      for (const o of F.buses) if (o.active && o.obj.visible && o.obj.position.x > 9 && o.obj.position.z < 40.5) driving = true;
-      if (!driving) {
-        for (let i = 0; i < F.buses.length; i++) {
-          const b = F.buses[i];
-          if (!b.departAt || minutes < b.departAt || b.active) continue;
-          const full = b.expected > 0 && b.load >= b.expected * 0.93 && b.load >= 3;
-          if (full || minutes >= b.departAt + 40) {
-            busDepart(i);
-            break;
+      // ---- the buses leave together, one behind the other, once every one of them has its children on board ----
+      // (so none pulls out round the end of the bay while children are still walking to the others). The one nearest
+      // the lane by the wall goes first; each waits till the one before is round the end of the bay and on the lane
+      {
+        const waiting = F.buses.filter((b) => b.departAt && !b.active && b.obj.visible);
+        if (waiting.length && minutes >= Math.min(...waiting.map((b) => b.departAt))) {
+          const done = (b) => (b.expected > 0 && b.load >= b.expected * 0.93 && b.load >= 3) || (b.expected === 0 && minutes >= b.departAt) || minutes >= b.departAt + 30;
+          if (waiting.every(done)) {
+            for (let i = F.buses.length - 1; i >= 0; i--) {
+              const b = F.buses[i];
+              if (!waiting.includes(b)) continue;
+              b.departAt = null;
+              b.boarding = false; // (no one else is sent to it now)
+              convoy.push(i);
+            }
           }
+        }
+        if (convoy.length) {
+          const turning = F.buses.some((b) => b.active && b.obj.visible && b.obj.position.x < 34 && (b.obj.position.z < 38.6 || b.obj.position.x < 18));
+          if (!turning) busDepart(convoy.shift());
         }
       }
       // ---- autos: drop and go in the morning; in the afternoon the front one fills up, then goes ----
       let front = null;
-      for (const a of F.autos) {
+      for (const a of DROPPERS) {
         if (!a.stopped) continue;
         a.waitT += dt;
         if (a.dropping) {
           a.leaveIn -= dt;
-          if (a.leaveIn <= 0) autoLeave(a);
+          if (a.leaveIn <= 0) dropLeave(a);
           continue;
         }
         front = a;
       }
       if (front) {
-        // children waiting on the footpath climb in, one by one
-        if (front.load < AUTO_SEATS && autoWaiting.length && !front.boarding) {
+        // children waiting under the canopy climb in, one by one
+        if (front.load < front.seats && autoWaiting.length && !front.boarding) {
           const kid = autoWaiting.shift();
           if (kid?.active && kid.tag === 'waitAuto') {
             front.boarding = true;
-            const auto = front;
-            route(kid, [V(auto.obj.position.x - 0.2, 46.25)], {
+            const v = front;
+            const slot = freeSlot(kid);
+            route(kid, [...(slot ? [E(slot.x, WAIT_LANE)] : []), V(v.obj.position.x - 0.3 + rng() * 0.6, 26.05)], {
               pace: 1.2,
               onArrive: (b) => {
-                auto.load++;
-                auto.boarding = false;
+                v.load++;
+                v.boarding = false;
                 release(b);
               },
             });
           }
         }
-        // off when full, or when nobody else is coming
+        // off when full, or when nobody else is coming (the next one in the queue is waiting)
         const nobody = autoWaiting.length === 0 && autoComing === 0;
-        if (!front.boarding && (front.load >= AUTO_SEATS || (front.load > 0 && front.waitT > 25) || (nobody && front.waitT > 6) || front.waitT > 60)) autoLeave(front);
+        if (!front.boarding && (front.load >= front.seats || (front.load > 0 && front.waitT > 14) || (nobody && front.waitT > 5) || front.waitT > 35)) dropLeave(front);
       }
-      if (autoWaiting.length && minutes > TIMES.home + 20 && !F.autos.some((a) => a.obj.visible && !a.dropping && (a.stopped || a.active))) {
-        for (const kid of autoWaiting.splice(0)) if (kid.active) walkHome(kid);
+      // no more rides coming (or it's long past home time): anyone still waiting walks home
+      const noRides = !DROPPERS.some((a) => !a.dropping && (a.obj.visible || a.due)) && minutes > TIMES.home + 22;
+      if (autoWaiting.length && (noRides || minutes > TIMES.after + 12)) {
+        for (const kid of autoWaiting.splice(0)) {
+          if (!kid.active) continue;
+          const slot = freeSlot(kid);
+          walkHome(kid, [...(slot ? [E(slot.x, WAIT_LANE)] : []), ...DROP_PATH, courtyardGap(rng), V(-1.3, 14)]);
+        }
       }
+      // the road traffic waits while a car or an auto turns in or out at the drop-off gate
+      vehicles.setDropBusy(DROPPERS.some((d) => d.obj.visible && (d.active || d.stopped) && Math.abs(d.obj.position.x - DROP.x) < 9 && d.obj.position.z > 41 && d.obj.position.z < 51.5));
       // ---- one school vehicle at a time through the gate: the next one waits outside it ----
       {
         const inGate = (x, z) => Math.abs(x) < 9 && z > 36.5 && z < 47.5;
@@ -1807,10 +2042,24 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell, onSto
           if (out && p.z > 43.5 && p.z < 47.5 && Math.abs(p.x) < 9 && d.speed < 3 && !vehicles.roadClear(p.x)) d.hold = true;
         }
       }
-      // ---- road traffic waits while school vehicles turn at the gate ----
+      // ---- road traffic waits while school vehicles turn at the gate (or a bus at its own gate) ----
       let busy = false;
-      for (const d of busyList) if ((d.active || d.stopped) && d.obj.visible && Math.abs(d.obj.position.x) < 16 && d.obj.position.z > 40) busy = true;
+      let busTurning = false;
+      for (const d of busyList) {
+        if (!(d.active || d.stopped) || !d.obj.visible) continue;
+        const p = d.obj.position;
+        if (Math.abs(p.x) < 16 && p.z > 40 && p.z < 48.2) busy = true;
+        if (Math.abs(p.x - BX) < 12 && p.z > 41 && p.z < 51.5 && !(p.z > 48.8 && Math.abs(d.obj.rotation.y) > 1.2 && d.speed > 4)) busTurning = true;
+      }
       vehicles.setGateBusy(busy);
+      vehicles.setBusGateBusy(busTurning ? BX : null);
+      // a bus pulling out of its gate waits, its nose short of the road, for a gap in the near lane (it turns left
+      // into it, so only what's coming from the west matters — cars and autos leaving the drop-off included)
+      for (const b of F.buses) {
+        if (!b.active || !b.obj.visible) continue;
+        const p = b.obj.position;
+        if (Math.cos(b.obj.rotation.y) > 0.2 && p.z > 40.8 && p.z < 43.6 && Math.abs(p.x - BX) < 4 && b.speed < 3 && !vehicles.laneClear(p.x, true)) b.hold = true;
+      }
 
       // ---- football: players chase the ball, the nearest one kicks it ----
       if (ball.visible) {
@@ -1854,6 +2103,7 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell, onSto
         grounds.setGate(gateOpen);
       }
 
+      updateGames(dt);
       pool.update(dt);
       crowd.update(dt);
       clockT += dt;
@@ -1873,7 +2123,7 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell, onSto
         staff: staffSeats.filter((s) => s.state === 2).length,
         tags: crowd.agents.reduce((h, a) => (a.active && (h[a.tag || '-'] = (h[a.tag || '-'] || 0) + 1), h), {}),
         buses: F.buses.map((b) => `${b.load}/${b.expected}`).join(' '),
-        autos: F.autos.map((a) => `${a.load}${a.stopped ? 's' : ''}`).join(' '),
+        autos: DROPPERS.map((a) => `${a.load}${a.stopped ? 's' : ''}`).join(' '),
       };
     },
   };

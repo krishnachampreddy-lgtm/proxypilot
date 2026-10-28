@@ -8,6 +8,11 @@ import { buildEstate } from './estate.js';
 
 /* Ground, lawns, paths, sports areas, compound wall, gate, road, poles and the library. */
 
+/** the drop-off loop (its island's centre) and the children's walk from its canopy to the courtyard */
+/** the school buses' own gate, at the east end of the bus bay (in from the road, and out again, never past the walkers) */
+export const BUS_GATE = { x: 49 };
+export const DROP = { x: -56, z: 34, r: 6.75 };
+export const DROP_WALK = [[-49.5, 24.4], [-46.5, 26.0], [-24.1, 26.0], [-24.1, 12.6], [-27.2, 10.6], [-24.9, 6.5]];
 // (the grounds run back past the cricket oval, the pool and the auditorium: see estate.js)
 export const CAMPUS = { x0: -96, x1: 126, z0: -172, z1: 44 };
 const ROAD_Z = 53;
@@ -319,7 +324,8 @@ export function buildGrounds(scene, B, M, L, rng, P) {
     }
   };
   const { x0, x1, z0, z1 } = CAMPUS;
-  wallRun(x0, z1, x1, z1, (x) => Math.abs(x) < 17);
+  // (open at the main gate, at the drop-off gate for autos and parents' cars further west, and at the buses' gate to the east)
+  wallRun(x0, z1, x1, z1, (x) => Math.abs(x) < 17 || (x > -61 && x < -51) || Math.abs(x - BUS_GATE.x) < 5);
   wallRun(x0, z0, x1, z0);
   wallRun(x0, z0, x0, z1);
   wallRun(x1, z0, x1, z1);
@@ -449,6 +455,99 @@ export function buildGrounds(scene, B, M, L, rng, P) {
     scene.add(boom);
   }
 
+  // ---- the bus gate: two pylons and a lintel like the drop-off's, a boom-free opening wide enough for a bus to
+  // swing in off the road, and its own apron of asphalt joining the bus bay ----
+  {
+    const BX = BUS_GATE.x;
+    for (const s of [-1, 1]) {
+      const px = BX + s * 5.3;
+      B.box(1.6, 0.9, 1.4, 'maroon', px, 0, z1);
+      B.box(1.3, 3.9, 1.1, 'white', px, 0.9, z1);
+      B.box(1.6, 0.3, 1.4, 'maroon', px, 4.8, z1);
+      B.add(new THREE.SphereGeometry(0.22, 12, 8), 'lampOff', px, 5.35, z1);
+    }
+    B.box(9.4, 0.6, 0.9, 'white', BX, 5.1, z1);
+    B.box(9.6, 0.15, 1.0, 'maroon', BX, 5.7, z1);
+    const busSign = new THREE.Mesh(new THREE.PlaneGeometry(7.2, 0.48), new THREE.MeshStandardMaterial({ map: signTexture('SCHOOL BUSES ONLY', { w: 1536, h: 102, bg: '#1d2b4f', fg: '#f3d888', font: '700 62px Georgia, serif' }), roughness: 0.5 }));
+    busSign.position.set(BX, 5.4, z1 + 0.46);
+    const busSignB = busSign.clone();
+    busSignB.rotation.y = Math.PI;
+    busSignB.position.z = z1 - 0.46;
+    scene.add(busSign, busSignB);
+    // the apron across the footpath, and a little more of the bay for the buses to turn on
+    B.box(9.6, 0.066, 7.2, 'asphalt', BX, 0, z1 - 0.6);
+    B.box(5, 0.061, 9, 'asphalt', BX + 2.4, 0, 37.4);
+    // white lines either side of the footpath where it crosses the apron
+    B.box(9.2, 0.01, 0.16, 'line', BX, 0.07, z1 + 1.0);
+    B.box(9.2, 0.01, 0.16, 'line', BX, 0.07, z1 - 1.0);
+  }
+
+  // ---- the drop-off: autos and parents' cars come in at their own gate, go round a one-way loop and set the
+  // children down under a canopy, well away from the buses and the walkers' lane ----
+  {
+    const DX = DROP.x;
+    const DZ = DROP.z;
+    for (const s of [-1, 1]) {
+      const px = DX + s * 5.3;
+      B.box(1.6, 0.9, 1.4, 'maroon', px, 0, z1);
+      B.box(1.3, 3.6, 1.1, 'white', px, 0.9, z1);
+      B.box(1.6, 0.3, 1.4, 'maroon', px, 4.5, z1);
+      B.add(new THREE.SphereGeometry(0.22, 12, 8), 'lampOff', px, 5.05, z1);
+    }
+    B.box(9.4, 0.6, 0.9, 'white', DX, 4.8, z1);
+    B.box(9.6, 0.15, 1.0, 'maroon', DX, 5.4, z1);
+    const dropSign = new THREE.Mesh(new THREE.PlaneGeometry(7.6, 0.48), new THREE.MeshStandardMaterial({ map: signTexture('DROP-OFF  ·  AUTOS & CARS', { w: 1536, h: 98, bg: '#a9583f', fg: '#f3d888', font: '700 60px Georgia, serif' }), roughness: 0.5 }));
+    dropSign.position.set(DX, 5.1, z1 + 0.46);
+    const dropSignB = dropSign.clone();
+    dropSignB.rotation.y = Math.PI;
+    dropSignB.position.z = z1 - 0.46;
+    scene.add(dropSign, dropSignB);
+    // the driveway across the footpath and the loop round a planted island
+    B.box(9.6, 0.066, 7.2, 'asphalt', DX, 0, z1 - 0.6);
+    B.add(new THREE.RingGeometry(4.4, 9.1, 64).rotateX(-Math.PI / 2), 'asphalt', DX, 0.066, DZ);
+    B.add(new THREE.RingGeometry(9.1, 9.35, 64).rotateX(-Math.PI / 2), 'kerbYellow', DX, 0.075, DZ);
+    B.add(new THREE.CylinderGeometry(4.4, 4.5, 0.22, 48), 'maroon', DX, 0.11, DZ);
+    B.add(new THREE.CylinderGeometry(4.2, 4.2, 0.24, 48), 'courtOut', DX, 0.12, DZ);
+    for (let k = 0; k < 10; k++) {
+      const a = (k / 10) * Math.PI * 2;
+      B.add(new THREE.SphereGeometry(0.5, 10, 8), 'shrub', DX + Math.cos(a) * 3.3, 0.6, DZ + Math.sin(a) * 3.3, { sy: 0.8 });
+    }
+    B.cyl(0.5, 0.6, 'maroon', DX, 0.24, DZ, 16);
+    B.add(new THREE.SphereGeometry(1.1, 14, 10), 'shrub', DX, 1.7, DZ);
+    // painted arrows for the one-way loop
+    for (let k = 0; k < 4; k++) {
+      const a = (k / 4) * Math.PI * 2 + Math.PI / 4;
+      const ax = DX + Math.cos(a) * 6.75;
+      const az = DZ + Math.sin(a) * 6.75;
+      const ry = -a; // clockwise from above
+      B.add(new THREE.BoxGeometry(0.18, 0.01, 1.4), 'line', ax, 0.08, az, { ry });
+    }
+    // the canopy over the set-down kerb on the far side of the loop
+    const cz = DZ - 10.3;
+    B.box(14, 0.18, 2.6, 'pavers', DX, 0, cz);
+    B.box(14.2, 0.2, 0.25, 'maroon', DX, 0, cz + 1.32);
+    for (const x of [-6.4, -2.1, 2.1, 6.4]) {
+      B.cyl(0.16, 3.0, 'white', DX + x, 0.18, cz - 1.05, 12);
+      B.box(0.38, 0.25, 0.38, 'maroon', DX + x, 0.18, cz - 1.05);
+    }
+    B.box(14.6, 0.22, 3.6, 'maroon', DX, 3.18, cz + 0.2);
+    B.box(14.2, 0.06, 3.3, 'white', DX, 3.14, cz + 0.2);
+    for (const x of [-4.3, 0, 4.3]) {
+      B.box(1.8, 0.07, 0.42, 'wood', DX + x, 0.63, cz - 0.75);
+      B.box(0.12, 0.45, 0.4, 'maroon', DX + x - 0.75, 0.18, cz - 0.75);
+      B.box(0.12, 0.45, 0.4, 'maroon', DX + x + 0.75, 0.18, cz - 0.75);
+    }
+    const canopySign = new THREE.Mesh(new THREE.PlaneGeometry(5, 0.4), new THREE.MeshStandardMaterial({ map: signTexture('SET-DOWN & PICK-UP', { w: 1024, h: 82, bg: '#1d2b4f', fg: '#f3d888', font: '700 54px Arial, sans-serif' }), roughness: 0.5 }));
+    canopySign.position.set(DX, 2.7, cz + 2.03);
+    scene.add(canopySign);
+    // the children's path from the canopy to the courtyard, past the bicycle stand and in through the hedge
+    const walk = (ax, az, bx, bz, w = 2) => {
+      const len = Math.hypot(bx - ax, bz - az);
+      B.add(new THREE.BoxGeometry(len, 0.08, w), 'pavers', (ax + bx) / 2, 0.04, (az + bz) / 2, { ry: -Math.atan2(bz - az, bx - ax) });
+    };
+    for (let k = 0; k < DROP_WALK.length - 1; k++) walk(DROP_WALK[k][0], DROP_WALK[k][1], DROP_WALK[k + 1][0], DROP_WALK[k + 1][1]);
+  }
+
   // ---- the fountain on the west lawn: a tiered fountain in a sandstone basin, in a round paved court ----
   const water = new THREE.MeshStandardMaterial({ color: '#2f86ad', roughness: 0.06, metalness: 0.25, transparent: true, opacity: 0.9 });
   const jet = new THREE.MeshStandardMaterial({ color: '#d4eef8', roughness: 0.1, transparent: true, opacity: 0.42, emissive: '#8fcde6', emissiveIntensity: 0.12, depthWrite: false });
@@ -515,9 +614,21 @@ export function buildGrounds(scene, B, M, L, rng, P) {
 
   // ---- road, footpaths, kerbs, zebra crossing ----
   B.box(1200, 0.06, 14, 'asphalt', 0, 0, ROAD_Z);
-  for (const s of [-1, 1]) B.box(1200, 0.16, 3, 'pavers', 0, 0, ROAD_Z + s * 8.5);
+  // (the school-side footpath and its kerb are cut where the drop-off and the buses' gate driveways cross them: the
+  // driveway runs level out to the road there)
+  const CUTS = [[DROP.x - 4.8, DROP.x + 4.8], [BUS_GATE.x - 4.8, BUS_GATE.x + 4.8]];
+  const cut = (x) => CUTS.some(([a, b]) => x > a && x < b);
+  B.box(1200, 0.16, 3, 'pavers', 0, 0, ROAD_Z + 8.5);
+  {
+    let a = -600;
+    for (const [c0, c1] of [...CUTS, [600, 600]]) {
+      B.box(c0 - a, 0.16, 3, 'pavers', (a + c0) / 2, 0, ROAD_Z - 8.5);
+      a = c1;
+    }
+    for (const [c0, c1] of CUTS) B.box(c1 - c0, 0.066, 3.2, 'asphalt', (c0 + c1) / 2, 0, ROAD_Z - 8.4);
+  }
   for (let x = -300; x < 300; x += 1) {
-    for (const s of [-1, 1]) B.box(0.98, 0.22, 0.2, Math.round(x) % 2 ? 'kerbBlack' : 'kerbYellow', x + 0.5, 0, ROAD_Z + s * 7.05);
+    for (const s of [-1, 1]) if (s > 0 || !cut(x + 0.5)) B.box(0.98, 0.22, 0.2, Math.round(x) % 2 ? 'kerbBlack' : 'kerbYellow', x + 0.5, 0, ROAD_Z + s * 7.05);
   }
   for (let x = -300; x < 300; x += 8) if (Math.abs(x) > 8) B.box(3.4, 0.01, 0.14, 'line', x, 0.065, ROAD_Z);
   for (let i = 0; i < 9; i++) B.box(0.5, 0.01, 11, 'line', -4 + i, 0.065, ROAD_Z);
@@ -656,8 +767,8 @@ export function buildGrounds(scene, B, M, L, rng, P) {
       boom.rotation.z = up * Math.PI * 0.47;
     },
     /** the fountain's water moves */
-    update(t) {
-      estate.update(t);
+    update(t, minutes) {
+      estate.update(t, minutes);
       if (water.userData.shader) water.userData.shader.uniforms.uTime.value = t;
       fountain.children[5].scale.y = 1 + Math.sin(t * 5.3) * 0.06;
     },

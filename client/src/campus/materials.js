@@ -124,8 +124,9 @@ export function createMaterials(L, { quality = 'high' } = {}) {
   };
 
   // town houses: a handful of real paint colours, all weathered
-  M.town = ['#e9c98f', '#e3a28a', '#9fcfc0', '#f0e7d6', '#9ec3dc', '#f2d27a', '#dba8c7', '#f5efe4', '#d98b6a', '#b9d48f', '#c9b7e3', '#f3b9a0', '#8fd0d8', '#eadfb9'].map((c) =>
-    weather(textured('plaster_color.jpg', 'plaster_normal.jpg', 2.4, { color: c, normalScale: new THREE.Vector2(0.4, 0.4) }), grime, { amount: 1.3 })
+  // the neighbourhood round an old school of standing: quiet villas in whites, creams, stone and soft terracotta
+  M.town = ['#f3eee4', '#ece3d3', '#e2d8c6', '#f1e8d8', '#d8cdbb', '#f6f2ea', '#e7dbc6', '#cfc1ad', '#ebe4d8', '#d9cbb6', '#e9d3bf', '#dccfbd', '#e6d9c4', '#d2a88c'].map((c) =>
+    weather(textured('plaster_color.jpg', 'plaster_normal.jpg', 2.4, { color: c, normalScale: new THREE.Vector2(0.4, 0.4) }), grime, { amount: 0.55 })
   );
 
   // far-away houses: windows are drawn by the shader (and light up in the evening)

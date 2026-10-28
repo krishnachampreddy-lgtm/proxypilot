@@ -456,10 +456,78 @@ export function buildEstate(scene, B, M, rng) {
     }
   }
 
+  // ---- swimmers doing lengths (in the afternoon's swimming periods and at swim practice after school) ----
+  const swim = (() => {
+    const { x, z, w, d, deck } = POOL;
+    const lanes = 6;
+    const skin = std({ color: '#8f5e40', roughness: 0.6 });
+    const suit = std({ color: '#16203d', roughness: 0.5 });
+    const caps = std({ color: '#ffffff', roughness: 0.4 });
+    const body = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 12, 8).scale(0.62, 0.13, 0.19), suit, lanes);
+    const head = new THREE.InstancedMesh(new THREE.SphereGeometry(0.105, 12, 8), skin, lanes);
+    const cap = new THREE.InstancedMesh(new THREE.SphereGeometry(0.112, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2), caps, lanes);
+    const arms = new THREE.InstancedMesh(new THREE.BoxGeometry(0.5, 0.06, 0.07).translate(0.25, 0, 0), skin, lanes * 2);
+    const legs = new THREE.InstancedMesh(new THREE.BoxGeometry(0.55, 0.09, 0.09).translate(-0.27, 0, 0), skin, lanes * 2);
+    const capColors = ['#c62828', '#ffffff', '#f2b134', '#1f5fbf', '#ffffff', '#c62828'].map((c) => new THREE.Color(c));
+    for (let i = 0; i < lanes; i++) cap.setColorAt(i, capColors[i]);
+    const all = [body, head, cap, arms, legs];
+    for (const im of all) {
+      im.frustumCulled = false;
+      im.visible = false;
+      extras.add(im);
+    }
+    const m4 = new THREE.Matrix4();
+    const q = new THREE.Quaternion();
+    const e = new THREE.Euler();
+    const one = new THREE.Vector3(1, 1, 1);
+    const p = new THREE.Vector3();
+    const sx0 = x - w / 2 + 0.9;
+    const span = w - 1.8;
+    const swimmers = Array.from({ length: lanes }, (_, i) => ({ lane: z - d / 2 + ((i + 0.5) * d) / lanes, speed: 0.9 + ((i * 37) % 10) * 0.04, phase: (i * 0.37) % 1 }));
+    const surface = deck - 0.12;
+    return {
+      update(t, on) {
+        for (const im of all) im.visible = on;
+        if (!on) return;
+        swimmers.forEach((s, i) => {
+          // up and down the length, turning at each wall
+          const u = (t * s.speed) / span + s.phase;
+          const k = u % 2;
+          const fwd = k < 1;
+          const along = fwd ? k : 2 - k;
+          const sx = sx0 + along * span;
+          const dir = fwd ? 1 : -1;
+          const ry = fwd ? 0 : Math.PI;
+          const bob = Math.sin(t * 6 + i) * 0.02;
+          q.setFromEuler(e.set(Math.sin(t * 3 + i) * 0.12, ry, 0, 'YXZ'));
+          m4.compose(p.set(sx, surface - 0.09 + bob, s.lane), q, one);
+          body.setMatrixAt(i, m4);
+          q.setFromEuler(e.set(0, ry, 0, 'YXZ'));
+          m4.compose(p.set(sx + dir * 0.7, surface + 0.01 + bob, s.lane), q, one);
+          head.setMatrixAt(i, m4);
+          cap.setMatrixAt(i, m4);
+          // freestyle: the arms windmill in turn, the legs flutter
+          for (const side of [0, 1]) {
+            const a = t * 3.2 * s.speed + i + side * Math.PI;
+            q.setFromEuler(e.set(0, ry, -a, 'YXZ'));
+            m4.compose(p.set(sx + dir * 0.5, surface - 0.07, s.lane + (side ? 0.19 : -0.19)), q, one);
+            arms.setMatrixAt(i * 2 + side, m4);
+            q.setFromEuler(e.set(0, ry, Math.sin(t * 9 + side * Math.PI) * 0.25, 'YXZ'));
+            m4.compose(p.set(sx - dir * 0.55, surface - 0.12, s.lane + (side ? 0.08 : -0.08)), q, one);
+            legs.setMatrixAt(i * 2 + side, m4);
+          }
+        });
+        for (const im of all) im.instanceMatrix.needsUpdate = true;
+      },
+    };
+  })();
+
   return {
     lamps,
-    update(t) {
+    /** t: seconds; minutes: the school clock (the swimmers are in the pool in the afternoon) */
+    update(t, minutes = 0) {
       if (water.userData.shader) water.userData.shader.uniforms.uTime.value = t;
+      swim.update(t, (minutes > 12 * 60 + 52 && minutes < 14 * 60 + 47) || (minutes > 15 * 60 + 43 && minutes < 16 * 60 + 36));
     },
   };
 }

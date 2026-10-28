@@ -2,9 +2,9 @@ import * as THREE from 'three';
 import { CAMPUS } from './grounds.js';
 
 /*
-  The neighbourhood: two- to four-storey houses with painted plaster, chajjas over
-  the windows, balconies, shops with rolling shutters on the main road, and black
-  water tanks on every terrace — the view from any Indian school.
+  The neighbourhood: quiet two- and three-storey villas in pale plaster with stone trim,
+  chajjas over the windows, balconies with bronze railings, and glass-fronted shops on
+  the main road — the leafy, well-kept streets round an old school of standing.
 */
 
 const FH = 3.1;
@@ -13,7 +13,7 @@ function house(B, M, rng, x, z, facing, { detail = true, shop = false } = {}) {
   // facing: 0 = front faces -z, 1 = +z, 2 = -x, 3 = +x
   const w = 6 + rng() * 5;
   const d = 8 + rng() * 6;
-  const floors = 1 + Math.floor(rng() * (shop ? 3 : 3.6));
+  const floors = 2 + Math.floor(rng() * (shop ? 1.6 : 1.9));
   const H = floors * FH;
   const paint = M.town[Math.floor(rng() * M.town.length)];
   const trim = rng() < 0.5 ? 'white' : M.town[Math.floor(rng() * M.town.length)];
@@ -39,15 +39,17 @@ function house(B, M, rng, x, z, facing, { detail = true, shop = false } = {}) {
   for (let f = 0; f < floors; f++) {
     const y0 = 0.4 + f * FH;
     if (f === 0 && shop) {
-      // shop front: rolling shutter and a painted signboard
-      put(w * 0.8, 2.5, 0.08, 'shutter', 0, y0, -0.04);
-      put(w * 0.82, 0.6, 0.06, M.town[Math.floor(rng() * M.town.length)], 0, y0 + 2.55, -0.08);
+      // shop front: plate glass in a bronze frame under a fabric awning
+      put(w * 0.8, 2.4, 0.06, 'glassTown', 0, y0 + 0.05, -0.03);
+      put(w * 0.82, 0.1, 0.1, 'green', 0, y0 + 2.45, -0.06);
+      put(w * 0.82, 0.1, 0.1, 'green', 0, y0, -0.06);
+      put(w * 0.84, 0.08, 1.1, rng() < 0.5 ? 'fabricBlue' : 'maroon', 0, y0 + 2.75, -0.55);
       continue;
     }
     for (let i = 0; i < cols; i++) {
       const u = -w / 2 + (w / cols) * (i + 0.5);
       if (f === 0 && i === 0 && !shop) {
-        put(1.0, 2.1, 0.06, rng() < 0.5 ? 'wood' : 'blueRail', u, y0, -0.03); // front door
+        put(1.0, 2.1, 0.06, 'doorWood', u, y0, -0.03); // front door
         continue;
       }
       put(1.5, 1.4, 0.04, 'glassTown', u, y0 + 0.85, -0.02);
@@ -58,7 +60,7 @@ function house(B, M, rng, x, z, facing, { detail = true, shop = false } = {}) {
     // a balcony on upper floors at the front
     if (f > 0 && detail && rng() < 0.45) {
       put(w * 0.6, 0.14, 1.1, 'concrete', 0, y0 - 0.02, -0.55);
-      put(w * 0.6, 0.9, 0.05, 'blueRail', 0, y0 + 0.12, -1.08);
+      put(w * 0.6, 0.9, 0.05, 'green', 0, y0 + 0.12, -1.08);
     }
   }
   // side windows
@@ -68,16 +70,12 @@ function house(B, M, rng, x, z, facing, { detail = true, shop = false } = {}) {
       B.box(0.04, 1.1, 1.1, 'glassTown', px, 0.4 + f * FH + 1.0, pz, { ry });
     }
   }
-  // steel rods left sticking out of the roof for a future floor
-  if (rng() < 0.35) {
-    for (const cu of [-w / 2 + 0.2, w / 2 - 0.2]) for (const cv of [0.2, d - 0.2]) {
-      const [rx, rz] = at(cu, cv);
-      for (let r = 0; r < 4; r++) B.box(0.025, 0.9 + rng() * 0.4, 0.025, 'darkMetal', rx + (r % 2) * 0.12, H + 0.4, rz + (r > 1 ? 0.12 : 0));
-    }
+  // a stair room on the terrace, sometimes a pergola
+  if (detail && rng() < 0.3) {
+    const [gx, gz] = at(w / 4, d * 0.65);
+    for (const du of [-1, 1]) for (const dv of [-1, 1]) B.box(0.12, 2.2, 0.12, 'white', gx + du * 1.1, H + 0.4, gz + dv * 1.1, { ry });
+    B.box(2.6, 0.12, 2.6, 'wood', gx, H + 2.6, gz, { ry });
   }
-  // water tank(s), stair room, sometimes a dish
-  const [tx, tz] = at((rng() - 0.5) * w * 0.4, d * 0.7);
-  B.cyl(0.62, 1.15, 'tank', tx, H + 0.4, tz, 14);
   if (floors > 1 && rng() < 0.75) {
     const [mx, mz] = at(-w / 4, d * 0.35);
     B.box(2.2, 2.4, 2.6, paint, mx, H + 0.4, mz, { ry });
@@ -99,7 +97,6 @@ function farTown(B, M, rng, count = 1400) {
     const h = 3.5 + Math.floor(rng() * 4) * 3.1;
     const paint = M.townFar[Math.floor(rng() * M.townFar.length)];
     B.box(w, h, 7 + rng() * 9, paint, x, 0, z, { ry: rng() * 0.3 });
-    if (rng() < 0.6) B.cyl(0.6, 1.1, 'tank', x, h, z, 8);
   }
 }
 

@@ -518,6 +518,9 @@ const OBSTACLES = [
   { x0: -13.8, x1: -10.2, z0: 39.9, z1: 43.0 }, // his guard house
   { x0: -0.78, x1: -0.22, z0: 40.75, z1: 43.0 }, // the median between the walkers' lane and the vehicles'
   { x0: -20.2, x1: -13.8, z0: 18.3, z1: 24.7 }, // the fountain's basin
+  { x0: -60.6, x1: -51.4, z0: 29.4, z1: 38.6 }, // the island in the drop-off loop
+  { x0: -62.7, x1: -49.3, z0: 22.3, z1: 23.2 }, // the canopy's columns and benches
+  { x0: -49.9, x1: -49.3, z0: 41.1, z1: 41.7 }, // the guard at the drop-off gate
   // the courtyard benches against the wings
   ...[[-26.15, -20], [-26.15, -11.2], [26.15, -20], [26.15, -12.8]].map(([x, z]) => ({ x0: x - 0.25, x1: x + 0.25, z0: z - 0.9, z1: z + 0.9 })),
 ];
@@ -689,23 +692,26 @@ function setRoute(a, points, { run = false, onArrive = null, wait = 0, face = nu
 }
 
 // uniforms: shirt, trousers/skirt, tie (and its stripe), skin, hair, belt (or saree border, and its trim), socks, shoes
-// students: light-blue short-sleeved shirt with the school crest on the pocket, navy tie with light diagonal stripes,
-// navy trousers (or a navy pleated skirt) and a black belt
 // teachers: everyone wears the navy lanyard with the white TEACHER badge; the men in a light-blue check shirt (with
 // glasses), a dark navy shirt with grey trousers (glasses and a beard) or a cream shirt with black trousers (stubble);
 // the women in sarees, maroon with a beige border or olive green with a maroon one, a bindi, hair tied back
-const SCHOOL = { shirt: '#8db7e2', pants: '#1d2846', tie: '#1a2340', tie2: '#c9d6e6', belt: '#111111', socks: '#1d2846', shoe: '#0b0b0b', trim: '#111111', tieOn: 1 };
+// students: a navy blazer piped in gold with the crest on its breast pocket, a white shirt, a maroon-and-navy striped
+// tie, grey trousers (or a grey pleated skirt with white knee socks) and black shoes
+// (for the students the shader reads `belt` as the blazer's colour and `trim` as its gold piping)
+const SCHOOL = { shirt: '#f3f3ef', pants: '#6a6d74', tie: '#7a1f2b', tie2: '#1d2b4f', belt: '#16203d', socks: '#25272c', shoe: '#0b0b0b', trim: '#c9a24a', tieOn: 1 };
 const PALETTES = {
   boy: { ...SCHOOL, skin: '#9c6a4a', hair: '#110c09', girl: 0 },
   boy2: { ...SCHOOL, skin: '#7f5236', hair: '#0f0b08', girl: 0 },
-  girl: { ...SCHOOL, skin: '#a8744f', hair: '#100b08', socks: '#efefea', girl: 1 },
-  girlP: { ...SCHOOL, skin: '#9a6a48', hair: '#120c09', socks: '#efefea', girl: 1 }, // (the girls with ponytails)
+  girl: { ...SCHOOL, skin: '#a8744f', hair: '#100b08', socks: '#f1f1ec', girl: 1 },
+  girlP: { ...SCHOOL, skin: '#9a6a48', hair: '#120c09', socks: '#f1f1ec', girl: 1 }, // (the girls with ponytails)
   teacher: { shirt: '#b7d0ea', pants: '#2b2e35', tie: '#b7d0ea', tie2: '#b7d0ea', skin: '#8a5a3c', hair: '#1a1410', belt: '#111111', socks: '#22252b', shoe: '#2b1a10', trim: '#111111', tieOn: 0, girl: 0, glasses: 1, check: 1, teach: 1 },
   teacher2: { shirt: '#1f2a44', pants: '#6c7078', tie: '#1f2a44', tie2: '#1f2a44', skin: '#9a6748', hair: '#1b1816', belt: '#111111', socks: '#22252b', shoe: '#1a1210', trim: '#111111', tieOn: 0, girl: 0, glasses: 1, beard: 1, teach: 1 },
   teacher3: { shirt: '#eadfc3', pants: '#19191b', tie: '#eadfc3', tie2: '#eadfc3', skin: '#7c5034', hair: '#0f0c0a', belt: '#1a120c', socks: '#19191b', shoe: '#2b1a10', trim: '#111111', tieOn: 0, girl: 0, beard: 0.45, teach: 1 },
   teacherF: { shirt: '#d9c49b', pants: '#7a2030', tie: '#7a2030', tie2: '#7a2030', skin: '#9a6545', hair: '#100b08', belt: '#dcc79a', socks: '#7a2030', shoe: '#3a2414', trim: '#a8833c', tieOn: 0, girl: 1, saree: 1, teach: 1 },
   teacherF2: { shirt: '#56602a', pants: '#6f7432', tie: '#6f7432', tie2: '#6f7432', skin: '#a06c4a', hair: '#120c09', belt: '#7a2430', socks: '#6f7432', shoe: '#3a2414', trim: '#d2b05a', tieOn: 0, girl: 1, saree: 1, teach: 1 },
   teacherF3: { shirt: '#7a2030', pants: '#dccaa2', tie: '#dccaa2', tie2: '#dccaa2', skin: '#8e5d3e', hair: '#0e0a08', belt: '#7a2030', socks: '#dccaa2', shoe: '#3a2414', trim: '#c9a24a', tieOn: 0, girl: 1, saree: 1, teach: 1 },
+  // games kit: cricket and tennis whites
+  whites: { shirt: '#f5f3ee', pants: '#eeebe3', tie: '#f5f3ee', tie2: '#f5f3ee', skin: '#8f5e40', hair: '#120d0a', belt: '#e6e1d6', socks: '#f2f2ee', shoe: '#ecebe6', trim: '#eeebe3', tieOn: 0, girl: 0 },
   // the watchman at the gate: khaki shirt and trousers, a dark peaked cap, a moustache
   guard: { shirt: '#b39d6c', pants: '#5a4e33', tie: '#b39d6c', tie2: '#b39d6c', skin: '#7a4e33', hair: '#141110', belt: '#1a140e', socks: '#1a1a1a', shoe: '#0d0d0d', trim: '#2a2c33', tieOn: 0, girl: 0, beard: 0.7, guard: 1 },
 };
@@ -742,27 +748,45 @@ const UNIFORM_FRAGMENT = `
               col = u_shirt;
               if (u_flags2.z > 0.5) col *= 1.0 - 0.24 * max(step(0.8, fract(b.x * 36.0)), step(0.8, fract(b.y * 36.0))); // a check shirt
             }
-            if (b.y > 1.18 && ax > 0.4) col = skin; // short sleeves, to halfway down the upper arm
+            if (b.y > 1.18 && ax > 0.4 && u_flags.w < 0.5) col = skin; // short sleeves, to halfway down the upper arm
             if ((b.y > 1.535 && ax < 0.2) || (b.y > 1.49 && ax < 0.062)) col = skin; // the neck and head (the shirt's collar sits round the neck)
+            if (u_flags.w > 0.5) {
+              // the school blazer: navy, down to the wrists and the hips, open in a V at the front over the shirt and tie
+              bool arm = ax > 0.19 && b.y > 1.3;
+              float vw = (b.y - 1.205) * 0.26; // half the width of the V (nothing at the top button, wide at the collar)
+              if (b.y > 0.9 && b.y < 1.505 && ax < 0.69 && !(b.y > 1.49 && ax < 0.062)) {
+                col = u_belt;
+                if (!arm && b.z > 0.055 && b.y > 1.205 && ax < vw) col = u_shirt;
+                if (!arm && b.z > 0.055 && b.y > 1.205 && b.y < 1.47 && abs(ax - vw) < 0.0055) col = u_trim; // gold-piped lapels
+                if (!arm && b.y < 0.913) col = u_trim; // and hem
+                if (arm && ax > 0.648 && ax < 0.659) col = u_trim; // and cuffs
+                if (!arm && b.z > 0.075 && ax < 0.011 && (abs(b.y - 1.183) < 0.0095 || abs(b.y - 1.095) < 0.0095)) col = u_trim; // gold buttons
+                if (!arm && b.z > 0.075 && ax > 0.07 && ax < 0.15 && abs(b.y - 1.03) < 0.006) col = u_belt * 0.55; // pocket flaps
+                // the breast pocket (on the left), the school crest above it
+                if (b.z > 0.075 && b.x > 0.052 && b.x < 0.128 && abs(b.y - 1.302) < 0.0035) col = u_trim;
+                vec2 q = vec2(b.x - 0.09, b.y - 1.338);
+                if (b.z > 0.075 && abs(q.x) < 0.02 && q.y < 0.021 && q.y > -0.024 + abs(q.x) * 0.9) {
+                  col = q.x < 0.0 ? vec3(0.1, 0.14, 0.3) : vec3(0.42, 0.11, 0.15);
+                  if (abs(q.x) > 0.015 || q.y > 0.016 || q.y < -0.019 + abs(q.x) * 0.9) col = u_trim;
+                  if (length(q - vec2(0.0, 0.0)) < 0.0055) col = vec3(0.98, 0.78, 0.3);
+                }
+              }
+              if (b.y > 1.455 && b.y < 1.505 && ax < 0.082 && b.z > -0.01) col = u_shirt; // the white shirt collar
+              if (b.y > 1.3 && ax > 0.69) col = skin; // hands
+            }
             if (b.y > 1.6 && ax < 0.2 && b.z < 0.035) col = u_hair;
             if (u_flags.x > 0.5 && b.y > 1.55 && ax < 0.2 && b.z < 0.05) col = u_hair; // longer hair at the nape
             if (b.y > 1.71) col = u_hair;
-            if (b.y > 0.9 && b.y <= 0.95) col = u_belt;
+            if (b.y > 0.9 && b.y <= 0.95 && u_flags.w < 0.5) col = u_belt;
             if (u_flags.y > 0.5 && b.y < 0.6) col = skin; // below a school skirt
-            if (b.y < (u_flags.y > 0.5 ? 0.2 : 0.16)) col = u_socks;
+            if (b.y < (u_flags.y > 0.5 ? 0.43 : 0.16)) col = u_socks; // (white knee socks with the skirt)
             if (b.y < 0.085) col = u_shoe;
             if (u_flags.z > 0.5 && b.y > 1.18 && b.y < 1.3 && ax < 0.36 && ax > 0.05) col = skin; // a saree blouse leaves the midriff bare
             if (u_flags.w > 0.5) {
-              // the school tie, navy with light diagonal stripes
-              float tw = 0.016 + (1.46 - b.y) * 0.05; // narrow at the knot, wider and pointed at the tip
-              if (ax < tw && b.z > 0.075 && b.y > 1.08 + ax * 1.4 && b.y < 1.47) col = fract((b.y + b.x * 0.9) * 34.0) < 0.22 ? u_tie2 : u_tie;
-              // the pocket on the left of the chest with the school crest
-              if (b.z > 0.09 && b.x > 0.045 && b.x < 0.118 && b.y > 1.262 && b.y < 1.348) {
-                vec2 q = vec2(b.x - 0.081, b.y - 1.305);
-                col = u_shirt * 0.88;
-                if (abs(q.x) < 0.017 && q.y < 0.018 && q.y > -0.021 + abs(q.x) * 0.7) col = vec3(0.09, 0.13, 0.32);
-                if (length(q) < 0.0065) col = vec3(0.86, 0.68, 0.22);
-              }
+              // the school tie in maroon with broad navy stripes, showing in the V of the blazer
+              float tw = 0.016 + (1.46 - b.y) * 0.05; // narrow at the knot, wider towards the tip
+              float vw2 = (b.y - 1.205) * 0.26;
+              if (ax < tw && ax < vw2 - 0.006 && b.z > 0.075 && b.y > 1.205 && b.y < 1.47) col = fract((b.y + b.x * 0.9) * 22.0) < 0.38 ? u_tie2 : u_tie;
             }
             // backpack straps over both shoulders
             float sx = 0.098 + (1.46 - b.y) * 0.07; // each strap runs from the shoulder down towards the armpit
@@ -1842,9 +1866,13 @@ export async function createPeople(scene, L, rng, P, camera) {
   const teacherEvery = 7;
   let nT = 0;
   let nGirl = 0;
-  for (let i = 0; i < P.walkers; i++) {
-    const teacher = [1, 3, 5].includes(i % teacherEvery); // about three in seven are teachers
-    const kind = teacher ? (nT++ % 2 ? MALE_TEACHERS : FEMALE_TEACHERS)[Math.floor(nT / 2) % 3] : kinds[i % kinds.length];
+  // (and a few in whites for the games after school: two batsmen, two bowlers, four tennis players)
+  const SPORTS = ['bat', 'bat', null, null, 'racket', 'racket', 'racket', 'racket'];
+  for (let i = 0; i < P.walkers + SPORTS.length; i++) {
+    const prop = i >= P.walkers ? SPORTS[i - P.walkers] : undefined;
+    const sport = prop !== undefined;
+    const teacher = !sport && [1, 3, 5].includes(i % teacherEvery); // about three in seven are teachers
+    const kind = sport ? 'whites' : teacher ? (nT++ % 2 ? MALE_TEACHERS : FEMALE_TEACHERS)[Math.floor(nT / 2) % 3] : kinds[i % kinds.length];
     const obj = cloneSkinned(gltf.scene);
     const shells = [];
     obj.traverse((o) => {
@@ -1872,6 +1900,7 @@ export async function createPeople(scene, L, rng, P, camera) {
     const size = teacher ? 0.97 + rng() * 0.05 : 0.78 + rng() * 0.12;
     holder.scale.setScalar(size);
     attachExtras(obj, holder, kind, mats[kind], (nGirl += kind === 'girl' ? 1 : 0) % 2 === 0);
+    if (prop) attachProp(obj, holder, prop);
     scene.add(holder);
     const mixer = new THREE.AnimationMixer(obj);
     const act = { walk: mixer.clipAction(clips.walk), run: mixer.clipAction(clips.run), idle: mixer.clipAction(clips.idle) };
@@ -1882,7 +1911,7 @@ export async function createPeople(scene, L, rng, P, camera) {
     act.idle.weight = 1;
     mixer.setTime(rng() * 5);
     const ag = {
-      i, teacher, kind, holder, mixer, act, size, off: null,
+      i, teacher, kind, holder, mixer, act, size, off: null, sport, prop: prop || null,
       active: false, path: null, seg: 0, run: false, wait: 0, onArrive: null, onWaitEnd: null, holdT: 0, y0: 0, segLen: -1,
       pos: new THREE.Vector3(), heading: 0, face: null, tag: null, anim: Math.random(),
       w: { walk: 0, run: 0, idle: 1 },
@@ -1903,7 +1932,18 @@ export async function createPeople(scene, L, rng, P, camera) {
      */
     spawn(points, opts = {}) {
       // (a particular teacher if asked for and free, otherwise anyone of the right sort)
-      const a = (opts.kind && agents.find((g) => !g.active && g.kind === opts.kind)) || agents.find((g) => !g.active && (opts.teacher === undefined || g.teacher === opts.teacher));
+      // (the ones in games kit only ever play games: ask for them by what they carry, opts.sport = 'bat' | 'racket' | 'bowl')
+      if (opts.sport) {
+        const want = opts.sport === 'bowl' ? null : opts.sport;
+        const g = agents.find((x) => !x.active && x.sport && x.prop === want);
+        if (!g) return null;
+        return this.spawnAgent(g, points, opts);
+      }
+      const a = (opts.kind && agents.find((g) => !g.active && !g.sport && g.kind === opts.kind)) || agents.find((g) => !g.active && !g.sport && (opts.teacher === undefined || g.teacher === opts.teacher));
+      if (!a) return null;
+      return this.spawnAgent(a, points, opts);
+    },
+    spawnAgent(a, points, opts) {
       if (!a) return null;
       a.active = true;
       a.sys = this;
@@ -1999,6 +2039,37 @@ function attachExtras(obj, holder, kind, mat, pony = false) {
     m.castShadow = true;
     m.frustumCulled = false;
     b.add(m);
+  }
+}
+
+/** a cricket bat or a tennis racket, held in the right hand */
+const PROP_MATS = {};
+function attachProp(obj, holder, prop) {
+  const b = obj.getObjectByName('mixamorigRightHand');
+  if (!b) return;
+  holder.updateMatrixWorld(true);
+  const h = REST.handR;
+  const parts = [];
+  if (prop === 'bat') {
+    PROP_MATS.willow = PROP_MATS.willow || new THREE.MeshStandardMaterial({ color: '#d9bb83', roughness: 0.6 });
+    PROP_MATS.grip = PROP_MATS.grip || new THREE.MeshStandardMaterial({ color: '#202020', roughness: 0.8 });
+    // (at rest the arm points out sideways, so the bat runs on from the fingers along -x)
+    parts.push([new THREE.CylinderGeometry(0.016, 0.016, 0.26, 8).rotateZ(Math.PI / 2).translate(h.x - 0.16, h.y - 0.02, h.z), PROP_MATS.grip]);
+    parts.push([new THREE.BoxGeometry(0.52, 0.035, 0.105).translate(h.x - 0.55, h.y - 0.02, h.z), PROP_MATS.willow]);
+  } else {
+    PROP_MATS.frame = PROP_MATS.frame || new THREE.MeshStandardMaterial({ color: '#1f3f7a', roughness: 0.4, metalness: 0.3 });
+    PROP_MATS.strings = PROP_MATS.strings || new THREE.MeshStandardMaterial({ color: '#f1f1ea', roughness: 0.6, transparent: true, opacity: 0.55, side: THREE.DoubleSide });
+    parts.push([new THREE.CylinderGeometry(0.014, 0.014, 0.24, 8).rotateZ(Math.PI / 2).translate(h.x - 0.15, h.y - 0.02, h.z), PROP_MATS.frame]);
+    parts.push([new THREE.TorusGeometry(0.13, 0.012, 6, 20).scale(1.3, 1, 1).rotateX(Math.PI / 2).translate(h.x - 0.43, h.y - 0.02, h.z), PROP_MATS.frame]);
+    parts.push([new THREE.CircleGeometry(0.128, 20).scale(1.3, 1, 1).rotateX(Math.PI / 2).translate(h.x - 0.43, h.y - 0.02, h.z), PROP_MATS.strings]);
+  }
+  const toBone = new THREE.Matrix4().copy(b.matrixWorld).invert().multiply(holder.matrixWorld);
+  for (const [g, m] of parts) {
+    g.applyMatrix4(toBone);
+    const mesh = new THREE.Mesh(g, m);
+    mesh.castShadow = true;
+    mesh.frustumCulled = false;
+    b.add(mesh);
   }
 }
 

@@ -142,6 +142,13 @@ export function buildTrees(scene, L, rng, { P, merge }) {
     spots.bush2.push([-38.2, z]);
     spots.bush2.push([38.2, z]);
   }
+  // a green belt round the outside of the compound wall, and an avenue along the far side of the main road
+  for (let z = z0 + 2; z < z1 - 4; z += 11) {
+    spots[(z / 11) % 2 < 1 ? 'neem' : 'peepal'].push([x0 - 7 - rng() * 1.5, z + rng() * 3]);
+    spots[(z / 11) % 2 < 1 ? 'peepal' : 'neem'].push([x1 + 7 + rng() * 1.5, z + rng() * 3]);
+  }
+  for (let x = x0 - 4; x < x1 + 4; x += 11) spots[(x / 11) % 2 < 1 ? 'neem' : 'banyan'].push([x + rng() * 3, z0 - 7 - rng() * 1.5]);
+  for (let x = -190; x <= 190; x += 36) spots.neem.push([x, 61.6]); // (half-way between the electric poles)
   // trees in the town beyond the road and around the campus
   const farCount = P.farTrees;
   for (let i = 0; i < farCount; i++) {
@@ -167,7 +174,10 @@ export function buildTrees(scene, L, rng, { P, merge }) {
     !(x > 60 && x < 110 && z > -77 && z < 17) &&
     !(Math.abs(x - 57) < 3 && z < -38 && z > -97) &&
     !(Math.abs(x + 47.5) < 3 && z < -38 && z > -64) &&
-    !(Math.abs(z + 62) < 3 && x < -45 && x > -75);
+    !(Math.abs(z + 62) < 3 && x < -45 && x > -75) &&
+    !(x > -67 && x < -45 && z > 21 && z < 46) && // (the drop-off loop and its canopy)
+    !(x > 41 && x < 57 && z > 33 && z < 50) && // (the bus gate and where the buses swing through it)
+    !(x > -50 && x < -22 && Math.abs(z - 26) < 2.5); // (and the children's path from it)
   for (const k of Object.keys(spots)) spots[k] = spots[k].filter((p) => !inCampus(p) || clear(p));
   const lists = [];
   const farMeshes = [];
@@ -206,7 +216,7 @@ export function buildTrees(scene, L, rng, { P, merge }) {
   // palms frame the drive; the north end is kept clear for buses and cars turning in
   for (let z = 14; z <= 26; z += 6) palmSpots.push([-11.6, z]);
   palmSpots.push([11.6, 14], [11.6, 20]); // (the third one would stand where buses turn out of their bays)
-  palmSpots.push([-20, 30], [-40, 30], [30, 14], [40, 15], [60, 38], [-60, 38], [-88, 40], [118, 40]);
+  palmSpots.push([-20, 30], [-40, 30], [30, 14], [40, 15], [60, 38], [-72, 38], [-88, 40], [118, 40]);
   const palm = palmGeometries(L, rng, palmSpots);
   const meshes = [
     new THREE.Mesh(merge(palm.trunks), palm.trunkMat),

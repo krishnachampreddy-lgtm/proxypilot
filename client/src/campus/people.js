@@ -570,7 +570,7 @@ const crosses = (o, ax, az, bx, bz, pad) => {
   return true;
 };
 /** bends a route round the obstacles: the shortest way past via one or two of the box's corners */
-function detour(start, path) {
+function detour(start, path, spread = 0) {
   // (a few passes: going round one thing can lead across another)
   for (let pass = 0; pass < 3; pass++) {
     let changed = false;
@@ -587,7 +587,9 @@ function detour(start, path) {
         const a = i ? path[i - 1] : start;
         const b = path[i];
         if (a.y > 0.3 || b.y > 0.3 || !crosses(o, a.x, a.z, b.x, b.z, 0.4)) continue;
-        const P = 0.6;
+        // (everyone rounds the corner a little differently, so a crowd crossing in front of something doesn't all
+        // tread the one spot)
+        const P = 0.6 + spread * 1.1;
         const c = [[o.x0 - P, o.z0 - P], [o.x1 + P, o.z0 - P], [o.x1 + P, o.z1 + P], [o.x0 - P, o.z1 + P]];
         const clear = (p, q) => !crosses(o, p[0], p[1], q[0], q[1], 0.38);
         const A = [a.x, a.z];
@@ -676,7 +678,7 @@ function setRoute(a, points, { run = false, onArrive = null, wait = 0, face = nu
     }
   }
   if (holdAt) for (const [i, t] of Object.entries(holdAt)) if (a.path[i]) a.path[i].hold = t;
-  detour(a.pos, a.path);
+  detour(a.pos, a.path, (a.anim * 7.31 + (a.routes || 0) * 0.618 + Math.abs(a.pos.x) * 0.37) % 1);
   a.routes = (a.routes || 0) + 1; // (for the debug tools: how often this person has been given a new route)
   a.seg = 0;
   a.y0 = a.pos.y;

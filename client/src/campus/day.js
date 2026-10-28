@@ -50,15 +50,15 @@ export const TIMES = {
 
 export const PHASES = [
   { id: 'arrival', label: 'Morning arrival', from: hm(7, 15), to: TIMES.assemblyBell, speed: 0.3, now: 'Friends walk in together with their bags, go up to their classrooms and sit down' },
-  { id: 'gather', label: 'Assembly bell', from: TIMES.assemblyBell, to: TIMES.assembly, speed: 0.095, now: 'Every class comes down and lines up in the courtyard' },
+  { id: 'gather', label: 'Assembly bell', from: TIMES.assemblyBell, to: TIMES.assembly, speed: 0.07, now: 'Every class comes down and lines up in the courtyard' },
   { id: 'assembly', label: 'Assembly', from: TIMES.assembly, to: TIMES.toClass, speed: 0.6, now: 'Prayer, pledge and the anthem — every class in its lines, its class teacher beside it' },
-  { id: 'toclass', label: 'Back to class', from: TIMES.toClass, to: PERIODS[0][0], speed: 0.1, now: 'The lines break up from the back and go up to their classrooms' },
+  { id: 'toclass', label: 'Back to class', from: TIMES.toClass, to: PERIODS[0][0], speed: 0.075, now: 'The lines break up from the back and go up to their classrooms' },
   { id: 'classes', label: 'Lessons', from: PERIODS[0][0], to: TIMES.breakStart, speed: 4, now: 'A teacher in every classroom — explaining, writing on the board · teachers change rooms at each bell' },
   { id: 'break', label: 'Short break', from: TIMES.breakStart, to: TIMES.breakEnd, speed: 0.3, now: 'Fifteen minutes out in the courtyard · teachers on duty' },
   { id: 'classesB', label: 'Lessons', from: TIMES.breakEnd, to: TIMES.lunchStart, speed: 4, now: 'Periods 4 and 5 · a PE class on the track · readers in the library' },
   { id: 'lunch', label: 'Lunch', from: TIMES.lunchStart, to: TIMES.lunchEnd, speed: 0.5, now: 'Friends eat and chat in little groups · basketball on the court · teachers on duty' },
   { id: 'classes2', label: 'Lessons', from: TIMES.lunchEnd, to: TIMES.home, speed: 4, now: 'Afternoon periods · football in PE · a substitute covers any teacher on leave' },
-  { id: 'home', label: 'Home time', from: TIMES.home, to: TIMES.after, speed: 0.4, now: 'Floor by floor the classes come down — buses, autos and the walk home' },
+  { id: 'home', label: 'Home time', from: TIMES.home, to: TIMES.after, speed: 0.3, now: 'Floor by floor the classes come down — buses, autos and the walk home' },
   { id: 'after', label: 'After school', from: TIMES.after, to: TIMES.evening, speed: 0.8, now: 'Games practice on the grounds · the staff meeting' },
   { id: 'evening', label: 'Evening', from: TIMES.evening, to: hm(17, 50), speed: 0.9, now: 'Teachers drive home · the classrooms go dark · the gate is locked at 5:35' },
 ];

@@ -818,7 +818,8 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell, onSto
   /** where someone on foot comes from or goes to along the road (never as far as the drop-off gate to the west, or the
    *  buses' gate to the east: nobody on foot has to cross either) */
   const roadEnd = (side) => (side < 0 ? -(30 + rng() * 17) : 26 + rng() * 16);
-  const walkerFrom = (side) => [SQ(roadEnd(side), 45.45, FEET.ground, 0.45), [SQ(side * 2.4, 45.45, FEET.ground, 0.45), ...GATE_IN]];
+  // (into the courtyard anywhere across its wide front, not all through one spot)
+  const walkerFrom = (side) => [SQ(roadEnd(side), 45.45, FEET.ground, 0.45), [SQ(side * 2.4, 45.45, FEET.ground, 0.45), ...GATE_IN.slice(0, 3), courtyardGap(rng)]];
 
   let walkSchedule = [];
   const WALK_SPEED = 1.5; // metres a second for a group walking in (see evenPace)
@@ -1289,15 +1290,15 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell, onSto
         fillLines(already);
       }
       // (each staircase brings down two classes at a time)
-      const turns = stairTurns((c) => seats[c].n * 0.62, 30);
+      const turns = stairTurns((c) => seats[c].n * 0.75, 45);
       for (let c = 0; c < CLASSES; c++) {
         const start = turns[c];
         const n = seats[c].n;
         // through the door one after another, girls and boys in turn (nearest desks first)
         const order = [];
-        for (let k = 0; k < n; k++) order.push({ kind: k % 2 ? 'boy' : 'girl', t: start + k * 0.62 });
+        for (let k = 0; k < n; k++) order.push({ kind: k % 2 ? 'boy' : 'girl', t: start + k * 0.75 });
         planExit(c, order, 1.4, start).forEach((o, k) => {
-          soon(o ? o.at : start + k * 0.62, () => leaveClass(c, { pace: 1.4, tag: 'toLine' }, (b) => walkToLine(b, c), order[k].kind, o?.seat));
+          soon(o ? o.at : start + k * 0.75, () => leaveClass(c, { pace: 1.4, tag: 'toLine' }, (b) => walkToLine(b, c), order[k].kind, o?.seat));
         });
       }
       // anyone still walking in (on the ground) is late: straight to their line, bag and all
@@ -1330,7 +1331,7 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell, onSto
       // every class goes back up to its room and sits down
       const rows = new Array(CLASSES).fill(0);
       for (const a of lineAgents) if (a.data) rows[a.data.cls] = Math.max(rows[a.data.cls], a.data.row ?? 0);
-      const turns = stairTurns((c) => (rows[c] + 1) * 1.4, 40);
+      const turns = stairTurns((c) => (rows[c] + 1) * 1.7, 55);
       for (const a of lineAgents) {
         if (!a.active || a.tag !== 'line') continue;
         const { cls, row } = a.data;
@@ -1339,7 +1340,7 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell, onSto
         const room = CLASSROOMS[cls];
         const toFront = courtyardOf(room)[1] < -4 && Math.abs(lx) > FLAG_CLEAR;
         const end = toFront ? LINES_FRONT : LINES_BACK;
-        later(turns[cls] + (rows[cls] - row) * 1.4 + rng() * 0.6, () => a.active && goToClass(a, cls, [E(lx, a.pos.z), E(lx, end), E(lx, end + (toFront ? -1.2 : 1.2)), ...(toFront ? [] : aroundLines(lx, courtyardOf(room)))], { pace: 1.3 }));
+        later(turns[cls] + (rows[cls] - row) * 1.7 + rng() * 0.6, () => a.active && goToClass(a, cls, [E(lx, a.pos.z), E(lx, end), E(lx, end + (toFront ? -1.2 : 1.2)), ...(toFront ? [] : aroundLines(lx, courtyardOf(room)))], { pace: 1.3 }));
       }
       // anyone still on the way to the lines turns round (once they're out of the building); anyone already
       // heading for their desk just carries on

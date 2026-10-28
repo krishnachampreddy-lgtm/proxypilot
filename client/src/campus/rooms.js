@@ -200,7 +200,9 @@ function stairOf(id, block, u0, u1) {
   const corr = at(um, 7.8);
   // the two stairs beside the clock tower are reached round the side of its porch, not through it
   const yard = block === 'A' && Math.abs(um) < 8 ? [[Math.sign(um) * 6.9, -14.4], [Math.sign(um) * 6.9, -19.6]] : [];
-  return { id, block, u0, u1, um, uA, uB, corr, ground: at(um, 10.6), yard, up };
+  // (the clock tower's stairs come down beside it, clear of the tower and its porch)
+  const ground = yard.length ? [Math.sign(um) * 6.3, -23.4] : at(um, 10.6);
+  return { id, block, u0, u1, um, uA, uB, corr, ground, yard, up };
 }
 
 export const STAIRS = [

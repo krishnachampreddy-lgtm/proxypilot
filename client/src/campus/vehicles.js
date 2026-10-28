@@ -323,12 +323,17 @@ export function buildVehicles(scene, rng, P) {
     const px = d.obj.position.x;
     const pz = d.obj.position.z;
     const R = reach + 2;
+    // (and anyone right beside it, where its side or tail would brush them as it turns)
+    const r0 = d.obj.rotation.y;
+    const bx = Math.sin(r0);
+    const bz = Math.cos(r0);
     for (const list of pedestrians()) {
       for (const a of list) {
         if (!a.active || a.pos.y > 0.3) continue;
         const rx = a.pos.x - px;
         const rz = a.pos.z - pz;
         if (rx > R || rx < -R || rz > R || rz < -R) continue;
+        if (Math.abs(rx * bx + rz * bz) < d.dims.len / 2 + 0.2 && Math.abs(rx * bz - rz * bx) < d.dims.wid / 2 + 0.35) return true;
         for (const p of pts) {
           const dx = a.pos.x - p.x;
           const dz = a.pos.z - p.z;
@@ -428,10 +433,11 @@ export function buildVehicles(scene, rng, P) {
         // and let it go); people may walk past one that's just standing in a queue
         if (!d.active || !d.obj.visible || (d.speed < 0.4 && !(d.pedWait > 2))) continue;
         const r = d.obj.rotation.y + (d.reverse ? Math.PI : 0);
-        zones.push({ x: d.obj.position.x, z: d.obj.position.z, fx: Math.sin(r), fz: Math.cos(r), back: -d.dims.len / 2 - 0.3, front: d.dims.len / 2 + 1.2, half: d.dims.wid / 2 + 1.5, path: d.dims.wid / 2 + 0.45, nose: d.dims.len / 2 - 0.6 });
+        const moving = d.speed > 0.3;
+        zones.push({ x: d.obj.position.x, z: d.obj.position.z, fx: Math.sin(r), fz: Math.cos(r), back: -d.dims.len / 2 - 0.3, front: d.dims.len / 2 + 1.2, half: d.dims.wid / 2 + 1.5, path: d.dims.wid / 2 + 0.45, nose: d.dims.len / 2 - 0.6, moving });
         // and short strips along the bend it's about to drive: anyone standing in them steps aside
         for (const p of ahead(d, d.dims.len / 2 + 1.0, d.dims.len / 2 + 1.0 + 4 + d.speed * 1.2, 2.4)) {
-          zones.push({ x: p.x, z: p.z, fx: p.fx, fz: p.fz, back: -1.6, front: 1.6, half: d.dims.wid / 2 + 1.5, path: d.dims.wid / 2 + 0.45, nose: -9 });
+          zones.push({ x: p.x, z: p.z, fx: p.fx, fz: p.fz, back: -1.6, front: 1.6, half: d.dims.wid / 2 + 1.5, path: d.dims.wid / 2 + 0.45, nose: -9, moving });
         }
       }
       for (const d of fleetList) d.update(dt);

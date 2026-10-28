@@ -74,6 +74,8 @@ const AUTO_SEATS = 4;
 const GATE_IN = [V(-2.2, 43.2), V(-1.9, 30), V(-1.3, 14), V(0.6, 4)];
 const GATE_OUT = [V(-1.3, 14), V(-1.9, 30), V(-2.2, 43.2)];
 const COURTYARD_IN = V(0.6, 4);
+/** somewhere across the courtyard's wide front opening (so groups don't all funnel through one spot) */
+const courtyardGap = (rng) => V(0.6 + (rng() - 0.5) * 5.5, 4 + (rng() - 0.5) * 1.6);
 // places where friends stand about at lunch: the courtyard and the front lawns
 const LUNCH_AREAS = [
   { x0: -20, x1: 20, z0: -19, z1: 1.5, not: (x, z) => (Math.abs(x) < 3.2 && z > -14.5 && z < -7.5) || (Math.abs(x) < 7 && z < -14.5) },
@@ -93,7 +95,8 @@ const LINE_PITCH = 1.12;
 const ROW_PITCH = 0.62;
 // (an aisle down the middle, where the teachers walk)
 const lineX = (cls) => -22.4 + (cls + 0.5) * LINE_PITCH + (cls < 20 ? -0.75 : 0.75);
-const slotXZ = (cls, kind, row) => [lineX(cls) + (kind === 'boy' ? -0.27 : 0.27), -8.2 + row * ROW_PITCH];
+// (the boys' and girls' lines stand close, leaving a clear gap either side for walking up)
+const slotXZ = (cls, kind, row) => [lineX(cls) + (kind === 'boy' ? -0.235 : 0.235), -8.2 + row * ROW_PITCH];
 // the gap beside each line: students walk up it and step into their place, never through others
 const laneX = (cls, kind) => lineX(cls) + (kind === 'boy' ? -0.56 : 0.56);
 const LINES_FRONT = -9.5;
@@ -149,7 +152,11 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell }) {
   const seats = CLASSROOMS.map((room, ci) => {
     const [cx, cz] = at(room.block, room.rc, 3.3);
     const g = posed.group(cx, room.feet + 1.2, cz, 5.4);
-    const mk = (s, kind) => ({ ...s, kind, state: 0, slot: posed.slot(g, { kind, x: s.x, y: s.y, z: s.z, heading: s.heading }) });
+    // how far each desk is from the door (in, along the front, down the aisle, along the row): the far desks
+    // fill first and empty last, so nobody has to squeeze past someone sitting down or getting up
+    const d2 = (p, q) => Math.hypot(p[0] - q[0], p[1] - q[1]);
+    const walkTo = (s) => d2(room.inDoor, room.frontAisle) + d2(room.frontAisle, s.aisle) + d2(s.aisle, s.row) + d2(s.row, [s.x, s.z]);
+    const mk = (s, kind) => ({ ...s, kind, state: 0, walk: walkTo(s), slot: posed.slot(g, { kind, x: s.x, y: s.y, z: s.z, heading: s.heading }) });
     const teacherKind = (ci % 2 ? MALE_TEACHERS : FEMALE_TEACHERS)[Math.floor(ci / 2) % 3];
     return {
       girl: room.girls.map((s) => mk(s, 'girl')),
@@ -161,7 +168,8 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell }) {
   const reserveSeat = (cls, kind) => {
     const S = seats[cls];
     for (const k of [kind, kind === 'boy' ? 'girl' : 'boy']) {
-      const s = S[k].find((x) => x.state === 0);
+      let s = null;
+      for (const x of S[k]) if (x.state === 0 && (!s || x.walk > s.walk)) s = x; // the free desk furthest in
       if (s) {
         s.state = 1;
         return s;
@@ -177,20 +185,42 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell }) {
     posed.set(s.slot, true);
     seats[cls].n++;
   };
-  /** someone at a desk stands up (preferring boys or girls); returns their seat */
-  const standUp = (cls, kind) => {
+  /** someone at a desk stands up (that desk, or the one nearest the door, preferring boys or girls); returns their seat */
+  const standUp = (cls, kind, seat = null) => {
     const S = seats[cls];
+    let s = seat && seat.state === 2 ? seat : null;
     for (const k of kind ? [kind, kind === 'boy' ? 'girl' : 'boy'] : rng() < 0.5 ? ['boy', 'girl'] : ['girl', 'boy']) {
-      for (let i = S[k].length - 1; i >= 0; i--) {
-        const s = S[k][i];
-        if (s.state !== 2) continue;
-        s.state = 0;
-        posed.set(s.slot, false);
-        S.n--;
-        return s;
-      }
+      if (s) break;
+      for (const x of S[k]) if (x.state === 2 && (!s || x.walk < s.walk)) s = x;
     }
-    return null;
+    if (!s) return null;
+    s.state = 0;
+    posed.set(s.slot, false);
+    S.n--;
+    return s;
+  };
+  /**
+   * who gets up when, as a class leaves: `order` lists each leaver ({ kind, t } — when they should be through
+   * the door). Each takes the nearest desk of their kind still occupied, and stands up just early enough to
+   * reach the door at their time — so everyone walks out at the same speed, a step apart, and nobody overtakes.
+   */
+  const planExit = (cls, order, base, start) => {
+    const S = seats[cls];
+    const used = new Set();
+    const v = 1.032 * base; // walking speed (see evenPace)
+    const out = order.map(({ kind, t }) => {
+      let best = null;
+      for (const k of [kind, kind === 'boy' ? 'girl' : 'boy']) {
+        for (const x of S[k]) if (x.state === 2 && !used.has(x) && (!best || x.walk < best.walk)) best = x;
+        if (best) break;
+      }
+      if (!best) return null;
+      used.add(best);
+      return { seat: best, at: t - best.walk / v };
+    });
+    const first = Math.min(Infinity, ...out.filter(Boolean).map((o) => o.at));
+    if (first < start) for (const o of out) if (o) o.at += start - first;
+    return out;
   };
   /** fill (or empty) the desks straight away, when the day jumps */
   const fillSeats = (share, skip = -1) => {
@@ -285,6 +315,7 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell }) {
   const goToClass = (a, cls, from = [], opts = {}) => {
     const room = CLASSROOMS[cls];
     const s = reserveSeat(cls, a.kind);
+    opts = { ...opts, pace: evenPace(a, opts.pace || 1.3) }; // (the same speed for big and small, so nobody catches up inside)
     const path = [...from, ...toDoor(room)];
     const holdAt = opts.queue ? { [path.length - 1]: opts.queue * 0.75 } : null;
     a.data = { ...(a.data || {}), cls, seat: s };
@@ -314,12 +345,13 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell }) {
    * then carries on with next(agent). Returns the agent, null if nobody's free to play them
    * (try again), or 'empty' if nobody is sitting in that class.
    */
-  const leaveClass = (cls, opts, next, kind) => {
+  const leaveClass = (cls, opts, next, kind, seat = null) => {
     const room = CLASSROOMS[cls];
-    const s = standUp(cls, kind);
+    const s = standUp(cls, kind, seat);
     if (!s) return 'empty';
     const a = crowd.spawn([E(s.x, s.z, room.feet), ...outOfSeat(room, s), ...fromDoor(room)], {
       ...opts,
+      pace: ((opts.pace || 1.2) * 0.86) / s.slot.size, // (small ones step quicker: the whole class walks at one speed)
       kind: s.slot.kind,
       size: s.slot.size,
       tone: s.slot.tone,
@@ -339,6 +371,7 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell }) {
    * grp: { expect, here: [], go(members) }
    */
   const meet = (grp, b) => {
+    if (b.tag === 'toClass') return; // (the bell went while they were on their way: they've turned back)
     if (grp.gone) return grp.go([b]);
     const n = grp.here.length;
     const [cx, cz] = grp.spot;
@@ -347,24 +380,31 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell }) {
     const x = cx + Math.cos(ang) * r;
     const z = cz + Math.sin(ang) * r;
     grp.here.push(b);
+    b.meetGrp = grp;
+    b.meetTag = b.tag;
     route(b, [V(x, z)], { wait: 1e9, face: Math.atan2(cx - x, cz - z), talk: true, pace: 0.9 });
     if (grp.here.length >= grp.expect) {
       grp.gone = true;
-      later(0.6, () => grp.go(grp.here.filter((m) => m.active)));
+      later(0.6, () => grp.go(waiting(grp)));
     } else if (n === 0) {
       // nobody waits forever for a friend who isn't coming
       later(25, () => {
         if (grp.gone) return;
         grp.gone = true;
-        grp.go(grp.here.filter((m) => m.active));
+        grp.go(waiting(grp));
       });
     }
   };
   const newGroup = (spot, expect, go) => ({ spot, expect, here: [], go, gone: false, spin: rng() * 6 });
+  /** the friends still standing at the meeting place (not anyone who's since been sent off somewhere else) */
+  const waiting = (grp) => grp.here.filter((m) => m.active && m.meetGrp === grp && m.tag === m.meetTag);
   /** a class empties out in groups of friends (girls with girls, boys with boys) */
   const emptyClass = (cls, start, gap, opts, go) => {
     const S = seats[cls];
     const counts = { girl: S.girl.filter((s) => s.state === 2).length, boy: S.boy.filter((s) => s.state === 2).length };
+    const base = opts.pace || 1.3;
+    // first the order (groups of friends, girls then boys) and when each is through the door...
+    const order = [];
     let t = start;
     for (const kind of ['girl', 'boy']) {
       let left = counts[kind];
@@ -373,22 +413,28 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell }) {
         left -= n;
         const grp = newGroup(meetSpot(CLASSROOMS[cls]), n, (members) => go(members, cls));
         for (let k = 0; k < n; k++) {
-          soon(t, () => {
-            const a = leaveClass(cls, { pace: 1.3, ...opts }, (b) => meet(grp, b), kind);
-            if (a === 'empty') {
-              grp.expect--;
-              if (!grp.gone && grp.here.length && grp.here.length >= grp.expect) {
-                grp.gone = true;
-                grp.go(grp.here.filter((m) => m.active));
-              }
-            }
-            return a;
-          });
+          order.push({ kind, t, grp });
           t += 0.7;
         }
         t += gap;
       }
     }
+    // ...then who sits where decides when they stand up
+    const plan = planExit(cls, order, base, start);
+    order.forEach(({ kind, grp }, i) => {
+      const o = plan[i];
+      soon(o ? o.at : start, () => {
+        const a = leaveClass(cls, { pace: base, ...opts }, (b) => meet(grp, b), kind, o?.seat);
+        if (a === 'empty') {
+          grp.expect--;
+          if (!grp.gone && grp.here.length && grp.here.length >= grp.expect) {
+            grp.gone = true;
+            grp.go(waiting(grp));
+          }
+        }
+        return a;
+      });
+    });
   };
   /** send a group off along a route side by side; each member gets onArrive(member, k) */
   const walkTogether = (members, points, opts, onArrive) => {
@@ -534,7 +580,7 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell }) {
       onArrive: (b) => {
         // late for assembly: straight to the line, bag and all
         if (minutes >= hm(7, 58) && minutes < hm(8, 28)) walkToLine(b, cls, []);
-        else goToClass(b, cls, [], { pace: b.pace, lateral: grp?.lat || 0, queue: grp?.k || 0 });
+        else goToClass(b, cls, [], { pace: 1.45, lateral: grp?.lat || 0, queue: grp?.k || 0 });
       },
     });
     if (a) {
@@ -747,7 +793,7 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell }) {
       const bus = roomy.reduce((m, b) => (b.expected < m.expected ? b : m), roomy[0]);
       const s = bus.slot;
       const bi = F.buses.indexOf(bus);
-      const pts = [COURTYARD_IN, V(1.4, 14), V(2.6, 24), V(3.6, busAisle(s)), NW(s.x - 1.5, busAisle(s)), NW(s.x - 3.3, busAisle(s)), busDoor(s)];
+      const pts = [courtyardGap(rng), V(1.4 + (rng() - 0.5) * 1.6, 14), V(2.6, 24), V(3.6, busAisle(s)), NW(s.x - 1.5, busAisle(s)), NW(s.x - 3.3, busAisle(s)), busDoor(s)];
       members.forEach((m) => {
         bus.expected++;
         m.tag = 'toBus';
@@ -762,12 +808,13 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell }) {
       return;
     }
     if (r < 0.26 && autoRiders + n <= AUTO_SEATS * F.autos.length) {
+      const gap = courtyardGap(rng);
       members.forEach((m) => {
         autoRiders++;
         autoComing++;
         m.tag = 'toAuto';
         const spot = V(AUTO_STOP[0] - 3 + rng() * 5, 45.1 + rng() * 0.7);
-        route(m, [COURTYARD_IN, ...GATE_OUT, V(-2.4, 45.0), spot], {
+        route(m, [gap, ...GATE_OUT, V(-2.4, 45.0), spot], {
           pace: evenPace(m, 1.25),
           onArrive: (b) => {
             autoComing = Math.max(0, autoComing - 1);
@@ -782,7 +829,7 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell }) {
     // walking home together, left or right along the road
     const side = rng() < 0.5 ? -1 : 1;
     members.forEach((m) => (m.tag = 'walkHome'));
-    walkTogether(members, homeRoute(members[0], [COURTYARD_IN, V(-1.3, 14)], side), { pace: 1.3 }, (b) => release(b));
+    walkTogether(members, homeRoute(members[0], [courtyardGap(rng), V(-1.3 + (rng() - 0.5) * 1.6, 14)], side), { pace: 1.3 }, (b) => release(b));
   };
 
   // ---------- other parts of the day ----------
@@ -901,7 +948,9 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell }) {
     for (const a of pool.agents) {
       if (!a.active || !filter(a)) continue;
       a.tag = 'leaving';
-      route(a, back, { pace: 1.2, onArrive: release });
+      // (anyone still on the way there turns round and goes back the way they came)
+      const onTheWay = a.path && a.path.length > 3 && a.seg > 0 && a.seg < a.path.length;
+      route(a, onTheWay ? a.path.slice(0, a.seg).reverse() : back, { pace: 1.2, onArrive: release });
     }
   };
   const stopFootball = () => {
@@ -966,12 +1015,12 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell }) {
       for (let c = 0; c < CLASSES; c++) {
         const start = rng() * 9;
         const n = seats[c].n;
-        for (let k = 0; k < n; k++) {
-          soon(start + k * 0.4, () => {
-            const a = leaveClass(c, { pace: 1.4, tag: 'toLine' }, (b) => walkToLine(b, c));
-            return a;
-          });
-        }
+        // through the door one after another, girls and boys in turn (nearest desks first)
+        const order = [];
+        for (let k = 0; k < n; k++) order.push({ kind: k % 2 ? 'boy' : 'girl', t: start + k * 0.6 });
+        planExit(c, order, 1.4, start).forEach((o, k) => {
+          soon(o ? o.at : start + k * 0.6, () => leaveClass(c, { pace: 1.4, tag: 'toLine' }, (b) => walkToLine(b, c), order[k].kind, o?.seat));
+        });
       }
       // anyone still walking in (on the ground) is late: straight to their line, bag and all
       for (const a of crowd.agents) {
@@ -1071,21 +1120,26 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell }) {
           const S = seats[c];
           let out = Math.round(S.n * 0.25);
           let t = rng() * 14;
+          const order = [];
           while (out > 0) {
             const n = Math.min(out, 2 + Math.floor(rng() * 4));
             out -= n;
             const kind = rng() < 0.5 ? 'boy' : 'girl';
             const grp = newGroup(meetSpot(CLASSROOMS[c]), n, (members) => chatCircle(members, takeSpot()));
             for (let k = 0; k < n; k++) {
-              soon(t, () => {
-                const a = leaveClass(c, { pace: 1.15, tag: 'lunch' }, (b) => meet(grp, b), kind);
-                if (a === 'empty') grp.expect--;
-                return a;
-              });
+              order.push({ kind, t, grp });
               t += 0.7;
             }
             t += 1.5 + rng() * 3;
           }
+          planExit(c, order, 1.15, order[0]?.t ?? 0).forEach((o, i) => {
+            const { kind, grp } = order[i];
+            soon(o ? o.at : order[i].t, () => {
+              const a = leaveClass(c, { pace: 1.15, tag: 'lunch' }, (b) => meet(grp, b), kind, o?.seat);
+              if (a === 'empty') grp.expect--;
+              return a;
+            });
+          });
         }
       }
       for (let i = 0; i < 6; i++) {
@@ -1118,21 +1172,28 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell }) {
   /** lunch is over: every group of friends walks back up to class together */
   const endLunch = () => {
     const done = new Set();
+    const inside = new Set();
     for (const a of crowd.agents) {
       if (!a.active || a.tag !== 'lunch' || done.has(a)) continue;
       const members = (a.data?.friends || [a]).filter((m) => m.active && m.tag === 'lunch');
       if (!members.length) members.push(a);
-      members.forEach((m) => {
+      const cls = a.data?.cls ?? Math.floor(rng() * CLASSES);
+      const lat = LAT[Math.min(5, members.length)];
+      const back = (k) => (b) => b.active && goToClass(b, cls, toYard(b.pos), { pace: 1.4, lateral: lat[k], queue: k });
+      members.forEach((m, k) => {
         done.add(m);
         m.tag = 'toClass';
         m.talk = false;
+        m.meetGrp = null; // (no longer waiting for friends to go out with)
+        // still on their way somewhere (down the stairs, to meet their friends): when they get there they turn
+        // straight back to class instead
+        if (m.path && m.seg < m.path.length) {
+          m.onArrive = back(k);
+          inside.add(m);
+        }
       });
-      const cls = a.data?.cls ?? Math.floor(rng() * CLASSES);
-      const lat = LAT[Math.min(5, members.length)];
-      // (still on the way down to meet the others: they turn back as soon as they're out of the building)
-      later(rng() * 5, () =>
-        members.forEach((m, k) => m.active && reroute(m, (b) => b.active && goToClass(b, cls, toYard(b.pos), { pace: evenPace(b, 1.4), lateral: lat[k], queue: k })))
-      );
+      // the ones out in the courtyard set off together, a moment later
+      later(rng() * 5, () => members.forEach((m, k) => m.active && !inside.has(m) && m.tag === 'toClass' && reroute(m, back(k))));
     }
     sendIn((a) => a.tag === 'basket', 'west');
   };

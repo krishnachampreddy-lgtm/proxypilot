@@ -586,6 +586,12 @@ export function createCampus(container, { mode = 'hero', time = 'morning', start
       return governor.fps;
     },
     /** who is standing in front of a vehicle (testing) */
+    debugAgent(i, sys = 'c') {
+      const a = (sys === 'c' ? people?.crowd.agents : people?.pool.agents)?.[i];
+      if (!a) return null;
+      const r = (v) => (v ? [+v.x.toFixed(2), +v.y.toFixed(2), +v.z.toFixed(2), v.exact ? 'E' : v.narrow ? 'N' : v.squeeze ? 'S' : ''] : null);
+      return { tag: a.tag, pos: r(a.pos), seg: a.seg, path: a.path?.map(r), holdT: a.holdT, wait: a.wait, yieldT: a.yieldT, gateT: a.gateT, moving: a.moving, run: a.run, pace: a.pace, data: a.data && { cls: a.data.cls, row: a.data.row, seat: Boolean(a.data.seat) }, onArrive: Boolean(a.onArrive), routes: a.routes, size: a.size, active: a.active };
+    },
     debugFleet() {
       const out = [];
       for (const [kind, list] of Object.entries(vehicles.fleet)) {

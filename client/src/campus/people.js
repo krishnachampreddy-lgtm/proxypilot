@@ -32,7 +32,34 @@ const PAD = 0.3; // how close a person's centre comes to a vehicle's side
 // while a school vehicle turns through the gate, people on foot wait either side of it (as the watchman waves them)
 let GATE_HOLD = false;
 export const setGateHold = (b) => (GATE_HOLD = b);
-const inGateBox = (x, z) => Math.abs(x) < 5.4 && z > 42.4 && z < 47.2;
+// (on the footpath they wait well clear, beyond where a turning bus's tail swings)
+const inGateBox = (x, z) => z > 42.4 && z < 47.2 && Math.abs(x) < (z > 43.6 ? 8.6 : 5.4);
+// the road beyond the kerb: nobody on foot is pushed out onto it (unless that's where they're going, to an auto)
+const KERB = 46.3;
+/**
+ * the compound wall (z ≈ 44, open only at the gate, |x| < 7.6): nobody walks through it. Someone pushed (or
+ * routed) towards it from the wrong side is stopped at it — and if where they're going is on the other side,
+ * they go round by the gate first
+ */
+function wall(a, goal, z0) {
+  if (a.pos.y >= 0.3 || Math.abs(a.pos.x) < 7.5 || Math.abs(a.pos.x) > 300) return;
+  const inside = z0 < 44;
+  if (inside && a.pos.z > 43.6) a.pos.z = z0 > 43.6 ? z0 : 43.6;
+  else if (!inside && a.pos.z < 44.45) a.pos.z = 44.45;
+  else return;
+  if ((goal.z > 44) !== inside || a.path?.[a.seg] !== goal) return; // (just brushed it: carry on along it)
+  const sx = Math.sign(a.pos.x);
+  const p = (x, z) => Object.assign(new THREE.Vector3(x, goal.y, z), { hold: 0 });
+  a.path.splice(a.seg, 0, ...(inside ? [p(sx * 5.4, 43.1), p(sx * 5.4, 45.2)] : [p(sx * 5.4, 45.2), p(sx * 5.4, 43.1)]));
+  a.segLen = -1;
+}
+const kerb = (a, goal, z0) => {
+  if (a.pos.y >= 0.3) return;
+  wall(a, goal, z0);
+  if (goal.z < KERB && z0 <= KERB + 0.05 && a.pos.z > KERB && Math.abs(a.pos.x) < 80) a.pos.z = KERB;
+  // (and on the footpath, never pushed back into the compound wall: it only opens at the gate)
+  if (z0 >= 44.4 && a.pos.z < 44.62 && Math.abs(a.pos.x) > 7.4) a.pos.z = 44.62;
+};
 const bodyLocal = (b, x, z) => {
   const dx = x - b.x;
   const dz = z - b.z;
@@ -118,7 +145,7 @@ function separate(lists, dt) {
   }
   for (const list of lists) {
     for (const a of list) {
-      if (!a.active || a.run || !(a.moving || a.gateT > 0 || a.yieldT > 0)) continue;
+      if (!a.active || a.run || a.force > 0 || !(a.moving || a.gateT > 0 || a.yieldT > 0)) continue;
       const goal = a.path?.[a.seg];
       if (!goal) continue;
       // (in a doorway, an aisle, a stair or the gap beside a line: only the gentlest nudge)
@@ -146,9 +173,10 @@ function separate(lists, dt) {
             if (d2 > r * r) continue;
             const d = Math.sqrt(d2) || 0.001;
             const w = (r - d) / r;
-            // someone ahead of us: pass them on the side we're already on (or the left)
+            // someone ahead of us: pass them on the side we're already on (or the left) — but not in a narrow
+            // passage, where we just keep a step behind
             const ahead = -(dx * fx + dz * fz);
-            if (ahead > 0.05) {
+            if (ahead > 0.05 && tight > 0.3) {
               const side = dx * fz - dz * fx >= 0 ? 1 : -1;
               px += fz * side * w * 0.8;
               pz += -fx * side * w * 0.8;
@@ -161,10 +189,13 @@ function separate(lists, dt) {
       if (!px && !pz) continue;
       const m = Math.hypot(px, pz);
       const k = (Math.min(m, 1.2) / m) * dt * 1.1 * tight;
+      const z0 = a.pos.z;
       a.pos.x += px * k;
       a.pos.z += pz * k;
+      keepOff(a);
       // (on the footpath outside the wall: never squeezed into the wall or off the kerb)
-      if (a.pos.y < 0.3 && Math.abs(a.pos.x) > 5 && a.pos.z > 44 && a.pos.z < 47 && goal.z > 44.4 && goal.z < 46.4) a.pos.z = Math.min(46.2, Math.max(44.62, a.pos.z));
+      if (a.pos.y < 0.3 && a.pos.z > 44 && a.pos.z < 47 && goal.z > 44.4 && goal.z < KERB) a.pos.z = Math.min(46.2, Math.abs(a.pos.x) > 7.6 ? Math.max(44.62, a.pos.z) : a.pos.z);
+      else kerb(a, goal, z0);
     }
   }
 }
@@ -183,7 +214,7 @@ const inZone = (z, x, y) => {
 const yieldTo = (x0, z0, x1, z1) => {
   // standing in a vehicle's path (ahead of its nose): get out of the way first, sideways
   for (const z of ZONES) {
-    if (inZone(z, x0, z0) && sideOf(z, x0, z0) < z.path && alongOf(z, x0, z0) > z.nose) return z;
+    if (z.moving && inZone(z, x0, z0) && sideOf(z, x0, z0) < z.path && alongOf(z, x0, z0) > z.nose) return z;
   }
   for (const z of ZONES) {
     if (!inZone(z, x0, z0)) {
@@ -194,6 +225,28 @@ const yieldTo = (x0, z0, x1, z1) => {
   }
   return 0;
 };
+
+// raised floors at ground level: the plinth the three blocks stand on (and their corridors), the entrance
+// porch, the library. Walking at ground level, your height comes from where you are — so you step up at the
+// plinth's edge, not halfway across the paving
+const RAISED = [
+  { x0: -36.15, x1: 36.15, z0: -34.15, z1: -24.85, h: 0.48 }, // block A
+  { x0: -36.15, x1: -26.85, z0: -25.0, z1: 8.15, h: 0.48 }, // block B
+  { x0: 26.85, x1: 36.15, z0: -25.0, z1: 8.15, h: 0.48 }, // block C
+  { x0: -5.5, x1: 5.5, z0: -20.85, z1: -15.8, h: 0.48 }, // the porch
+  { x0: -75, x1: -53, z0: -50.5, z1: -40.45, h: 0.53 }, // the library
+];
+const GROUND = 0.08;
+export function floorAt(x, z) {
+  let y = GROUND;
+  for (const r of RAISED) {
+    const sd = Math.max(r.x0 - x, x - r.x1, r.z0 - z, z - r.z1); // < 0 inside
+    if (sd > 0.12) continue;
+    const t = sd < -0.12 ? 1 : 0.5 - sd / 0.24; // (a quick step up over the edge)
+    y = Math.max(y, GROUND + (r.h - GROUND) * t);
+  }
+  return y;
+}
 
 /** moves one person along their route; returns true while they're walking */
 function step(a, dt, tmp) {
@@ -209,8 +262,56 @@ function step(a, dt, tmp) {
     const d = tmp.length();
     const speed = (a.run ? 3.0 : 1.2 * (a.pace || 1)) * a.size;
     if (a.segLen < 0) a.segLen = Math.max(d, 0.001);
+    // a watchdog: anyone making no headway for a while (hemmed in by others, or a vehicle that's waiting for
+    // them) stops giving way for a few seconds and walks on through
+    if (a.goalRef !== goal || d < a.bestD - 0.3) {
+      a.goalRef = goal;
+      a.bestD = d;
+      a.stuckT = 0;
+    } else if ((a.stuckT += dt) > 8) {
+      a.force = 3;
+      a.stuckT = 0;
+      a.bestD = d;
+      // held up by a vehicle standing in the way: go round its nearer end
+      if (a.pos.y < 0.3) {
+        for (const b of BODIES) {
+          if (!inBody(b, a.pos.x, a.pos.z, PAD + 0.6)) continue;
+          let best = null;
+          let bd = Infinity;
+          for (const su of [-1, 1]) {
+            for (const sv of [-1, 1]) {
+              const u = su * (b.hl + PAD + 0.45);
+              const v = sv * (b.hw + PAD + 0.45);
+              const cx = b.x + b.fx * u + b.fz * v;
+              const cz = b.z + b.fz * u - b.fx * v;
+              // (never out onto the road, nor into another vehicle)
+              if (cz > KERB - 0.1 && goal.z < KERB) continue;
+              // (nor through the compound wall: it only opens at the gate)
+              if ((a.pos.z > 44.2) !== (cz > 44.2) && (Math.abs(cx) > 7 || Math.abs(a.pos.x) > 7)) continue;
+              if (BODIES.some((o) => o !== b && inBody(o, cx, cz))) continue;
+              const L = Math.hypot(cx - a.pos.x, cz - a.pos.z) + Math.hypot(goal.x - cx, goal.z - cz);
+              if (L < bd) [bd, best] = [L, [cx, cz]];
+            }
+          }
+          if (best) {
+            const c = Object.assign(new THREE.Vector3(best[0], goal.y, best[1]), { hold: 0 });
+            a.path.splice(a.seg, 0, c);
+            a.segLen = -1;
+            a.y0 = a.pos.y;
+          }
+          break;
+        }
+      }
+    }
+    if (a.force > 0) a.force -= dt;
+    const giveWay = !(a.force > 0);
     if (d < 0.22) {
       a.pos.y = goal.y;
+      // (the last step onto an exact spot — a desk, a place in line — lands right on it)
+      if (goal.exact && a.seg === a.path.length - 1) {
+        a.pos.x = goal.x;
+        a.pos.z = goal.z;
+      }
       a.seg++;
       a.y0 = a.pos.y;
       a.segLen = -1;
@@ -230,12 +331,12 @@ function step(a, dt, tmp) {
     // a vehicle turning at the gate: wait till it's through
     // (only those about to cross the footpath in the gateway: someone just inside, heading in, carries on; and
     // nobody waits for ever)
-    if (GATE_HOLD && a.pos.z > 38 && !inGateBox(a.pos.x, a.pos.z) && inGateBox(a.pos.x + tmp.x * (stepLen + 0.3), a.pos.z + tmp.z * (stepLen + 0.3)) && (a.pos.z > 42.4 || goal.z > 43.7)) {
+    if (giveWay && GATE_HOLD && a.pos.z > 38 && !inGateBox(a.pos.x, a.pos.z) && inGateBox(a.pos.x + tmp.x * (stepLen + 0.3), a.pos.z + tmp.z * (stepLen + 0.3)) && (a.pos.z > 42.4 || goal.z > 43.7)) {
       a.gateT = (a.gateT || 0) + dt;
       if (a.gateT < 12) return false;
     } else if (a.gateT) a.gateT = Math.max(0, a.gateT - dt);
     // look out for vehicles: wait at the edge, or step aside if one is coming at you
-    if (a.pos.y < 0.3 && ZONES.length) {
+    if (giveWay && a.pos.y < 0.3 && ZONES.length) {
       const y = yieldTo(a.pos.x, a.pos.z, a.pos.x + tmp.x * (stepLen + 0.35), a.pos.z + tmp.z * (stepLen + 0.35));
       if (y === 1) {
         // waiting for a vehicle to pass (but nobody waits for ever: after a while they edge on)
@@ -253,13 +354,22 @@ function step(a, dt, tmp) {
     }
     // (a narrow point is on a passage laid out clear of everything, like the aisle between parked buses)
     if (a.pos.y < 0.3 && BODIES.length && !goal.narrow) {
+      const z0 = a.pos.z;
       const o = clearOfVehicles(a, goal, tmp.x * stepLen, tmp.z * stepLen);
       a.pos.x += o.x;
       a.pos.z += o.z;
-    } else a.pos.addScaledVector(tmp, stepLen);
-    // height follows the walk smoothly (up and down stairs, onto the plinth)
-    const k = Math.min(1, Math.max(0, (d - stepLen) / a.segLen));
-    a.pos.y = goal.y + (a.y0 - goal.y) * k;
+      kerb(a, goal, z0);
+    } else {
+      const z0 = a.pos.z;
+      a.pos.addScaledVector(tmp, stepLen);
+      if (a.pos.y < 0.3 && a.pos.z > 43 && a.pos.z < 45) wall(a, goal, z0);
+    }
+    // height: at ground level, the floor where you're standing; on stairs it follows the walk smoothly
+    if (a.y0 < 0.6 && goal.y < 0.6) a.pos.y = floorAt(a.pos.x, a.pos.z);
+    else {
+      const k = Math.min(1, Math.max(0, (d - stepLen) / a.segLen));
+      a.pos.y = goal.y + (a.y0 - goal.y) * k;
+    }
     const want = Math.atan2(tmp.x, tmp.z);
     let diff = want - a.heading;
     diff = Math.atan2(Math.sin(diff), Math.cos(diff));
@@ -285,9 +395,27 @@ function step(a, dt, tmp) {
 // things standing in the open that nobody walks over: routes are bent round them
 const OBSTACLES = [
   { x0: -2.1, x1: 2.1, z0: -13.1, z1: -8.9 }, // the flag platform
-  // the four columns of the entrance porch
-  ...[-4.8, -1.8, 1.8, 4.8].map((x) => ({ x0: x - 0.2, x1: x + 0.2, z0: -16.45, z1: -16.05 })),
+  { x0: -5.5, x1: 5.5, z0: -25.0, z1: -15.65 }, // the clock tower and its porch (with the columns): walked round, never across
+  // the courtyard benches against the wings
+  ...[[-26.15, -20], [-26.15, -11.2], [26.15, -20], [26.15, -12.8]].map(([x, z]) => ({ x0: x - 0.25, x1: x + 0.25, z0: z - 0.9, z1: z + 0.9 })),
 ];
+/** someone jostled onto an obstacle steps straight back off it, to the nearest side */
+function keepOff(a) {
+  if (a.pos.y > 0.3) return;
+  for (const o of OBSTACLES) {
+    const P = 0.25;
+    const l = a.pos.x - (o.x0 - P);
+    const r = o.x1 + P - a.pos.x;
+    const b = a.pos.z - (o.z0 - P);
+    const f = o.z1 + P - a.pos.z;
+    if (l <= 0 || r <= 0 || b <= 0 || f <= 0) continue;
+    const m = Math.min(l, r, b, f);
+    if (m === l) a.pos.x -= l;
+    else if (m === r) a.pos.x += r;
+    else if (m === b) a.pos.z -= b;
+    else a.pos.z += f;
+  }
+}
 const crosses = (o, ax, az, bx, bz, pad) => {
   // does the segment a→b pass through the box (grown by pad)? (Liang–Barsky clipping)
   const x0 = o.x0 - pad, x1 = o.x1 + pad, z0 = o.z0 - pad, z1 = o.z1 + pad;
@@ -309,37 +437,51 @@ const crosses = (o, ax, az, bx, bz, pad) => {
 };
 /** bends a route round the obstacles: the shortest way past via one or two of the box's corners */
 function detour(start, path) {
-  for (const o of OBSTACLES) {
-    for (let i = 0; i < path.length; i++) {
-      const a = i ? path[i - 1] : start;
-      const b = path[i];
-      if (a.y > 0.3 || b.y > 0.3 || !crosses(o, a.x, a.z, b.x, b.z, 0.4)) continue;
-      const P = 0.6;
-      const c = [[o.x0 - P, o.z0 - P], [o.x1 + P, o.z0 - P], [o.x1 + P, o.z1 + P], [o.x0 - P, o.z1 + P]];
-      const clear = (p, q) => !crosses(o, p[0], p[1], q[0], q[1], 0.38);
-      const A = [a.x, a.z];
-      const B = [b.x, b.z];
-      const d = (p, q) => Math.hypot(p[0] - q[0], p[1] - q[1]);
-      let best = null;
-      let bestLen = Infinity;
-      for (let k = 0; k < 4; k++) {
-        if (clear(A, c[k]) && clear(c[k], B)) {
-          const L = d(A, c[k]) + d(c[k], B);
-          if (L < bestLen) [best, bestLen] = [[c[k]], L];
-        }
-        for (const s of [1, 3]) {
-          const k2 = (k + s) % 4;
-          if (clear(A, c[k]) && clear(c[k2], B)) {
-            const L = d(A, c[k]) + d(c[k], c[k2]) + d(c[k2], B);
-            if (L < bestLen) [best, bestLen] = [[c[k], c[k2]], L];
+  // (a few passes: going round one thing can lead across another)
+  for (let pass = 0; pass < 3; pass++) {
+    let changed = false;
+    for (const o of OBSTACLES) {
+      // starting on it (jostled there, or put there by a jump in time): first step off to the nearest side
+      if (pass === 0 && start.y < 0.3 && start.x > o.x0 - 0.4 && start.x < o.x1 + 0.4 && start.z > o.z0 - 0.4 && start.z < o.z1 + 0.4) {
+        const opts = [[o.x0 - 0.55, start.z], [o.x1 + 0.55, start.z], [start.x, o.z0 - 0.55], [start.x, o.z1 + 0.55]];
+        let e = opts[0];
+        for (const q of opts) if (Math.hypot(q[0] - start.x, q[1] - start.z) < Math.hypot(e[0] - start.x, e[1] - start.z)) e = q;
+        path.unshift(Object.assign(new THREE.Vector3(e[0], start.y, e[1]), { hold: 0 }));
+        changed = true;
+      }
+      for (let i = 0; i < path.length; i++) {
+        const a = i ? path[i - 1] : start;
+        const b = path[i];
+        if (a.y > 0.3 || b.y > 0.3 || !crosses(o, a.x, a.z, b.x, b.z, 0.4)) continue;
+        const P = 0.6;
+        const c = [[o.x0 - P, o.z0 - P], [o.x1 + P, o.z0 - P], [o.x1 + P, o.z1 + P], [o.x0 - P, o.z1 + P]];
+        const clear = (p, q) => !crosses(o, p[0], p[1], q[0], q[1], 0.38);
+        const A = [a.x, a.z];
+        const B = [b.x, b.z];
+        const d = (p, q) => Math.hypot(p[0] - q[0], p[1] - q[1]);
+        let best = null;
+        let bestLen = Infinity;
+        for (let k = 0; k < 4; k++) {
+          if (clear(A, c[k]) && clear(c[k], B)) {
+            const L = d(A, c[k]) + d(c[k], B);
+            if (L < bestLen) [best, bestLen] = [[c[k]], L];
+          }
+          for (const s of [1, 3]) {
+            const k2 = (k + s) % 4;
+            if (clear(A, c[k]) && clear(c[k2], B)) {
+              const L = d(A, c[k]) + d(c[k], c[k2]) + d(c[k2], B);
+              if (L < bestLen) [best, bestLen] = [[c[k], c[k2]], L];
+            }
           }
         }
+        if (!best) continue;
+        const pts = best.map(([x, z]) => Object.assign(new THREE.Vector3(x, b.y, z), { hold: 0 }));
+        path.splice(i, 0, ...pts);
+        i += pts.length;
+        changed = true;
       }
-      if (!best) continue;
-      const pts = best.map(([x, z]) => Object.assign(new THREE.Vector3(x, b.y, z), { hold: 0 }));
-      path.splice(i, 0, ...pts);
-      i += pts.length;
     }
+    if (!changed) break;
   }
 }
 
@@ -387,6 +529,7 @@ function setRoute(a, points, { run = false, onArrive = null, wait = 0, face = nu
   }
   if (holdAt) for (const [i, t] of Object.entries(holdAt)) if (a.path[i]) a.path[i].hold = t;
   detour(a.pos, a.path);
+  a.routes = (a.routes || 0) + 1; // (for the debug tools: how often this person has been given a new route)
   a.seg = 0;
   a.y0 = a.pos.y;
   a.segLen = -1;
@@ -411,6 +554,7 @@ const PALETTES = {
   boy: { ...SCHOOL, skin: '#9c6a4a', hair: '#110c09', girl: 0 },
   boy2: { ...SCHOOL, skin: '#7f5236', hair: '#0f0b08', girl: 0 },
   girl: { ...SCHOOL, skin: '#a8744f', hair: '#100b08', socks: '#efefea', girl: 1 },
+  girlP: { ...SCHOOL, skin: '#9a6a48', hair: '#120c09', socks: '#efefea', girl: 1 }, // (the girls with ponytails)
   teacher: { shirt: '#b7d0ea', pants: '#2b2e35', tie: '#b7d0ea', tie2: '#b7d0ea', skin: '#8a5a3c', hair: '#1a1410', belt: '#111111', socks: '#22252b', shoe: '#2b1a10', trim: '#111111', tieOn: 0, girl: 0, glasses: 1, check: 1, teach: 1 },
   teacher2: { shirt: '#1f2a44', pants: '#6c7078', tie: '#1f2a44', tie2: '#1f2a44', skin: '#9a6748', hair: '#1b1816', belt: '#111111', socks: '#22252b', shoe: '#1a1210', trim: '#111111', tieOn: 0, girl: 0, glasses: 1, beard: 1, teach: 1 },
   teacher3: { shirt: '#eadfc3', pants: '#19191b', tie: '#eadfc3', tie2: '#eadfc3', skin: '#7c5034', hair: '#0f0c0a', belt: '#1a120c', socks: '#19191b', shoe: '#2b1a10', trim: '#111111', tieOn: 0, girl: 0, beard: 0.45, teach: 1 },
@@ -422,7 +566,7 @@ export const MALE_TEACHERS = ['teacher', 'teacher2', 'teacher3'];
 export const FEMALE_TEACHERS = ['teacherF', 'teacherF2', 'teacherF3'];
 
 // cloth that isn't part of the body carries a marker instead of a body position: y = 3, x = what it is
-const MARK = { book: 1, notebook: 2, hair: 3, border: 4, trim: 5, page: 6 };
+const MARK = { book: 1, notebook: 2, hair: 3, border: 4, trim: 5, page: 6, band: 7 };
 
 // one shader for every uniform: the colours and the few differences are uniforms, so the graphics card
 // compiles it once, not once per kind. Each region of the figure is found from its rest-pose position.
@@ -439,7 +583,7 @@ const UNIFORM_FRAGMENT = `
           vec3 col = u_pants;
           if (b.y > 2.5) {
             float code = floor(b.x + 0.5);
-            col = code < 1.5 ? vec3(0.42, 0.13, 0.15) : code < 2.5 ? vec3(0.16, 0.3, 0.58) : code < 3.5 ? u_hair : code < 4.5 ? u_belt : code < 5.5 ? u_trim : vec3(0.92, 0.9, 0.84);
+            col = code < 1.5 ? vec3(0.42, 0.13, 0.15) : code < 2.5 ? vec3(0.16, 0.3, 0.58) : code < 3.5 ? u_hair : code < 4.5 ? u_belt : code < 5.5 ? u_trim : code < 6.5 ? vec3(0.92, 0.9, 0.84) : vec3(0.1, 0.13, 0.3);
             if (code > 2.5 && code < 3.5) {
               // hair: tight curls for the boys, long strands with a sheen for the girls and women
               vec2 h = vec2(b.z * 0.1, b.y - 3.0);
@@ -507,7 +651,7 @@ const UNIFORM_FRAGMENT = `
 function uniformMaterial(name) {
   const P = PALETTES[name];
   const m = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.78 });
-  const flags = new THREE.Vector4(P.girl ? 1 : 0, name === 'girl' ? 1 : 0, P.saree ? 1 : 0, P.tieOn ? 1 : 0);
+  const flags = new THREE.Vector4(P.girl ? 1 : 0, name === 'girl' || name === 'girlP' ? 1 : 0, P.saree ? 1 : 0, P.tieOn ? 1 : 0);
   const flags2 = new THREE.Vector4(P.glasses ? 1 : 0, P.beard || 0, P.check ? 1 : 0, P.teach ? 1 : 0);
   m.onBeforeCompile = (sh) => {
     for (const k of ['shirt', 'pants', 'tie', 'tie2', 'skin', 'hair', 'belt', 'trim', 'socks', 'shoe']) sh.uniforms['u_' + k] = { value: new THREE.Color(P[k]) };
@@ -555,6 +699,8 @@ function jointsOf(copy, space = null) {
     spine2: P('Spine2'), neck: P('Neck'), head: P('Head'), headQ: Q('Head'), shL: P('LeftArm'), shR: P('RightArm'),
     handL: P('LeftHand'), handR: P('RightHand'), handLQ: Q('LeftHand'), handRQ: Q('RightHand'),
     hipsQ: Q('Hips'), spine: P('Spine'), spineQ: Q('Spine'), spine1: P('Spine1'), spine1Q: Q('Spine1'), spine2Q: Q('Spine2'),
+    shLQ: Q('LeftArm'), shRQ: Q('RightArm'), elL: P('LeftForeArm'), elR: P('RightForeArm'), elLQ: Q('LeftForeArm'), elRQ: Q('RightForeArm'),
+    upLQ: Q('LeftUpLeg'), upRQ: Q('RightUpLeg'), kneeLQ: Q('LeftLeg'), kneeRQ: Q('RightLeg'),
   };
 }
 
@@ -562,38 +708,109 @@ function jointsOf(copy, space = null) {
 // away and a shirt is put in its place, an elliptical tube that bends with the spine, from the belt to the chest.
 // Rings at rest: height, half width, half depth, centre depth, and the bone each ring moves with
 const TORSO_RINGS = [
+  [0.8, 0.06, 0.045, -0.005, 'hips'], // (closed underneath)
+  [0.855, 0.19, 0.122, -0.008, 'hips'],
   [0.925, 0.203, 0.13, -0.005, 'hips'],
   [1.0, 0.176, 0.122, -0.01, 'hips'],
   [1.1, 0.158, 0.11, -0.006, 'spine'],
   [1.2, 0.152, 0.116, 0.006, 'spine1'],
   [1.315, 0.142, 0.127, 0.02, 'spine2'],
 ];
-const CUT = (x, y) => y > 0.935 && y < 1.305 && Math.abs(x) < 0.26; // where the shell is cut away
-const boneFrame = (j, b) => {
-  const at = b === 'hips' ? 'hips' : b;
-  return frameOf(j, j[at], j[b + 'Q'], REST[at], REST[b + 'Q']);
+// the arms and legs too: the shell's jointed limbs give way to smooth sleeves, arms, trouser legs and shins
+// (the shoulders, hands, feet and head stay). Built once from the figure at rest — see makeBodyTubes
+let BODY = null; // { tubes: [{ rings: [{ c, a, b, ra, rb, bone }] }], shX, wrX, ankleY }
+const CUT = (x, y) => {
+  if (y > 0.935 && y < 1.305 && Math.abs(x) < 0.26) return true; // the torso
+  if (!BODY) return false;
+  const ax = Math.abs(x);
+  if (y > 1.25 && ax > BODY.shX + 0.03 && ax < BODY.wrX - 0.01) return true; // the arms (from just past the shoulder to the wrist)
+  if (y > BODY.ankleY + 0.035 && y < 0.95 && ax < 0.3) return true; // the legs and the hips (to the ankles)
+  return false;
 };
-/** the shirt body for a pose (positions posed; each vertex remembers where it is at rest, for the shader) */
-function torsoTube(S, j, around = 14) {
-  const base = S.role.length;
-  const p = new THREE.Vector3();
-  for (const [y, ra, rb, cz, bone] of TORSO_RINGS) {
-    const to = boneFrame(j, bone);
-    for (let k = 0; k < around; k++) {
-      const t = (k / around) * Math.PI * 2;
-      p.set(Math.sin(t) * ra, y, cz + Math.cos(t) * rb);
-      S.vert(to(p), 'body', p.clone());
-    }
+// which rest-pose joint (position, rotation) each ring moves with
+const BONE_JOINT = {
+  hips: ['hips', 'hipsQ', 'Hips'], spine: ['spine', 'spineQ', 'Spine'], spine1: ['spine1', 'spine1Q', 'Spine1'], spine2: ['spine2', 'spine2Q', 'Spine2'],
+  shL: ['shL', 'shLQ', 'LeftArm'], shR: ['shR', 'shRQ', 'RightArm'], elL: ['elL', 'elLQ', 'LeftForeArm'], elR: ['elR', 'elRQ', 'RightForeArm'],
+  upL: ['upL', 'upLQ', 'LeftUpLeg'], upR: ['upR', 'upRQ', 'RightUpLeg'], knL: ['kneeL', 'kneeLQ', 'LeftLeg'], knR: ['kneeR', 'kneeRQ', 'RightLeg'],
+};
+function makeBodyTubes() {
+  const R = REST;
+  const tubes = [];
+  // the torso
+  tubes.push({ rings: TORSO_RINGS.map(([y, ra, rb, cz, bone]) => ({ c: new THREE.Vector3(0, y, cz), a: X, b: Z, ra, rb, bone })) });
+  const axesFor = (from, to, up) => {
+    const dir = new THREE.Vector3().subVectors(to, from).normalize();
+    const a = up.clone().addScaledVector(dir, -up.dot(dir)).normalize();
+    const b = new THREE.Vector3().crossVectors(dir, a).normalize();
+    return [a, b];
+  };
+  for (const s of ['L', 'R']) {
+    // an arm: round shoulder, the upper arm (short sleeve, then skin), the elbow, the forearm to the wrist
+    const sh = R['sh' + s];
+    const el = R['el' + s];
+    const wr = R['hand' + s];
+    const [ua, ub] = axesFor(sh, el, Y);
+    const [fa, fb] = axesFor(el, wr, Y);
+    const ring = (c, a, b, r, bone, k = 1) => ({ c, a, b, ra: r, rb: r * k, bone });
+    tubes.push({
+      rings: [
+        ring(sh.clone().lerp(el, -0.06), ua, ub, 0.058, 'sh' + s),
+        ring(sh.clone().lerp(el, 0.12), ua, ub, 0.062, 'sh' + s, 1.02),
+        ring(sh.clone().lerp(el, 0.45), ua, ub, 0.052, 'sh' + s),
+        ring(sh.clone().lerp(el, 0.9), ua, ub, 0.045, 'sh' + s),
+        ring(el.clone().lerp(wr, 0.1), fa, fb, 0.044, 'el' + s),
+        ring(el.clone().lerp(wr, 0.55), fa, fb, 0.04, 'el' + s),
+        ring(el.clone().lerp(wr, 0.97), fa, fb, 0.032, 'el' + s),
+      ],
+    });
+    // a leg: from inside the hips down the thigh, the knee, the shin to the ankle
+    const hip = R['up' + s];
+    const kn = R['knee' + s];
+    const an = R['foot' + s];
+    const [ta, tb] = axesFor(hip, kn, X);
+    const [sa, sb] = axesFor(kn, an, X);
+    tubes.push({
+      rings: [
+        ring(hip.clone().add(new THREE.Vector3(0, 0.05, 0)), ta, tb, 0.09, 'up' + s, 1.04),
+        ring(hip.clone().lerp(kn, 0.3), ta, tb, 0.084, 'up' + s, 1.04),
+        ring(hip.clone().lerp(kn, 0.88), ta, tb, 0.064, 'up' + s),
+        ring(kn.clone().lerp(an, 0.1), sa, sb, 0.061, 'kn' + s),
+        ring(kn.clone().lerp(an, 0.5), sa, sb, 0.053, 'kn' + s),
+        ring(kn.clone().lerp(an, 0.93), sa, sb, 0.042, 'kn' + s),
+      ],
+    });
   }
-  for (let i = 0; i < TORSO_RINGS.length - 1; i++) {
-    for (let k = 0; k < around; k++) {
-      const a = base + i * around + k;
-      const b = base + i * around + ((k + 1) % around);
-      S.idx.push(a, b, a + around, b, b + around, a + around);
+  BODY = { tubes, shX: Math.abs(R.shL.x), wrX: Math.abs(R.handL.x), ankleY: Math.min(R.footL.y, R.footR.y) };
+}
+/** the smooth body (torso, arms, legs) for a pose: posed positions, and each vertex's rest position and bone */
+function bodyTubes(S, j, around = 14) {
+  const frames = {};
+  const frame = (bone) => {
+    if (!frames[bone]) {
+      const [pk, qk] = BONE_JOINT[bone];
+      frames[bone] = frameOf(j, j[pk], j[qk], REST[pk], REST[qk]);
     }
+    return frames[bone];
+  };
+  const p = new THREE.Vector3();
+  for (const tube of BODY.tubes) {
+    const n = tube.rings.length;
+    const seg = tube.rings[0].ra > 0.12 ? around : Math.max(8, Math.round(around * 0.6)); // (fewer sides round a limb)
+    const base = S.role.length;
+    for (const r of tube.rings) {
+      const to = frame(r.bone);
+      for (let k = 0; k < seg; k++) {
+        const t = (k / seg) * Math.PI * 2;
+        p.copy(r.c).addScaledVector(r.a, Math.cos(t) * r.ra).addScaledVector(r.b, Math.sin(t) * r.rb);
+        const vi = S.vert(to(p), 'body', p.clone());
+        (S.bone || (S.bone = []))[vi] = r.bone;
+        // (painted as trousers all the way up the thigh, never as shirt or belt)
+        (S.paint || (S.paint = []))[vi] = [p.x, /^(up|kn)/.test(r.bone) ? Math.min(p.y, 0.88) : p.y, p.z];
+      }
+    }
+    S.grid(base, n, seg);
   }
 }
-
 // the figure standing at rest (arms out): head and hands, to place hair and books relative to them in any pose
 let REST = null;
 const HEAD_C = new THREE.Vector3(0, 1.655, 0.004); // the middle of the head at rest
@@ -678,6 +895,33 @@ class Shapes {
     this.role.push(role);
     return this.role.length - 1;
   }
+  /**
+   * the triangles joining `rings` rings of `seg` vertices each (starting at vertex `base`), wound so that
+   * they face outwards (away from the rings' middles) — whichever way round the rings were made
+   */
+  grid(base, rings, seg) {
+    const P = this.pos;
+    const v = (i) => new THREE.Vector3(P[i * 3], P[i * 3 + 1], P[i * 3 + 2]);
+    const t = Math.min(rings - 2, Math.max(0, Math.floor((rings - 1) / 2)));
+    const mid = new THREE.Vector3();
+    for (let k = 0; k < seg; k++) mid.add(v(base + t * seg + k));
+    mid.divideScalar(seg);
+    let out = 0;
+    for (let k = 0; k < seg; k++) {
+      const a = v(base + t * seg + k);
+      const n = new THREE.Vector3().crossVectors(v(base + t * seg + ((k + 1) % seg)).sub(a), v(base + (t + 1) * seg + k).sub(a));
+      out += n.dot(a.clone().sub(mid));
+    }
+    const flip = out < 0;
+    for (let i = 0; i < rings - 1; i++) {
+      for (let k = 0; k < seg; k++) {
+        const a = base + i * seg + k;
+        const b = base + i * seg + ((k + 1) % seg);
+        if (flip) this.idx.push(a, a + seg, b, b, a + seg, b + seg);
+        else this.idx.push(a, b, a + seg, b, b + seg, a + seg);
+      }
+    }
+  }
   /** a tube through rings {c, a, b, ra, rb, pleat}: c centre, a/b the ring's axes, ra/rb radii */
   tube(rings, seg, role) {
     const base = this.role.length;
@@ -692,15 +936,7 @@ class Shapes {
         this.vert(p, role);
       }
     }
-    for (let i = 0; i < rings.length - 1; i++) {
-      for (let k = 0; k < seg; k++) {
-        const a = base + i * seg + k;
-        const b = base + i * seg + ((k + 1) % seg);
-        const c = a + seg;
-        const d = b + seg;
-        this.idx.push(a, c, b, b, c, d);
-      }
-    }
+    this.grid(base, rings.length, seg);
   }
   /** a flat strip through points, `w` wide, facing `out` (both sides drawn) */
   strip(points, outs, w, role) {
@@ -754,7 +990,7 @@ class Shapes {
       for (let k = 0; k < around; k++) {
         const th = (k / around) * Math.PI * 2; // 0 = the face
         const c = Math.cos(th);
-        const reach = c > 0 ? 1.16 * c * c + 1.68 * (1 - c * c) : nape * c * c + 1.68 * (1 - c * c);
+        const reach = (c > 0 ? 1.16 * c * c + 1.72 * (1 - c * c) : nape * c * c + 1.72 * (1 - c * c)) * (1 + (bump ? 0.05 : 0.025) * Math.sin(th * 5.3 + 0.4) * Math.sin(th * 2.1));
         const ph = (j / rings) * reach;
         const n = bump ? bump * (0.55 * Math.sin(th * 7 + ph * 3) * Math.sin(ph * 9 + th * 2) + 0.45 * Math.sin(th * 13 + 1.3) * Math.sin(ph * 12 + 0.7)) : 0;
         const g = (grow + n) * (j === rings ? 0.985 : 1);
@@ -762,13 +998,7 @@ class Shapes {
         this.vert(to(p), role, p);
       }
     }
-    for (let j = 0; j < rings; j++) {
-      for (let k = 0; k < around; k++) {
-        const a = base + j * around + k;
-        const b = base + j * around + ((k + 1) % around);
-        this.idx.push(a, b, a + around, b, b + around, a + around);
-      }
-    }
+    this.grid(base, rings + 1, around);
   }
   /** a small low-poly ball */
   ball(c, r, role, sx = 1, sy = 1, sz = 1) {
@@ -784,13 +1014,7 @@ class Shapes {
         this.vert(p, role);
       }
     }
-    for (let j = 0; j < H; j++) {
-      for (let k = 0; k < W; k++) {
-        const a = base + j * W + k;
-        const b = base + j * W + ((k + 1) % W);
-        this.idx.push(a, b, a + W, b, b + W, a + W);
-      }
-    }
+    this.grid(base, H + 1, W);
   }
 }
 
@@ -807,7 +1031,7 @@ function ringAxes(from, to) {
 const spreadAlong = (p, q, dir) => Math.abs(new THREE.Vector3().subVectors(p, q).dot(dir)) / 2;
 
 /** school girl: pleated skirt, two plaits with ribbons */
-function girlClothes(S, j, seg) {
+function girlClothes(S, j, seg, pony = false) {
   const W = j.hips.clone().add(new THREE.Vector3(0, 0.04, 0));
   const knees = j.kneeL.clone().add(j.kneeR).multiplyScalar(0.5);
   const hem = W.clone().lerp(knees, 0.8);
@@ -825,13 +1049,30 @@ function girlClothes(S, j, seg) {
     seg,
     'skirt'
   );
-  longHair(S, j, seg < 12 ? 6 : 10);
+  if (pony) ponytail(S, j);
+  else longHair(S, j, seg < 12 ? 6 : 10);
 }
 
 /** long open hair: a full cap and a fall of hair down the back to the shoulder blades */
 function longHair(S, j, around = 10) {
   const to = headFrame(j);
   S.cap(to, 'hair', { rings: around < 8 ? 4 : 6, around: around < 8 ? 10 : 14, grow: 1.04, nape: 2.35 });
+  // locks of hair either side of the face, down past the shoulders
+  for (const side of [-1, 1]) {
+    const t = to(new THREE.Vector3(side * 0.084, 1.655, -0.03));
+    const m = t.clone().add(new THREE.Vector3(side * 0.025, -0.12, -0.02));
+    const e = t.clone().add(new THREE.Vector3(side * 0.035, -0.25, -0.035));
+    const [la, lb] = ringAxes(t, e);
+    S.tube(
+      [
+        { c: t, a: la, b: lb, ra: 0.022, rb: 0.03 },
+        { c: m, a: la, b: lb, ra: 0.024, rb: 0.034 },
+        { c: e, a: la, b: lb, ra: 0.012, rb: 0.02 },
+      ],
+      6,
+      'hair'
+    );
+  }
   // (hanging well clear of the shoulders and the back of the shirt, so nothing shows through it)
   const top = to(new THREE.Vector3(0, 1.66, -0.112));
   const mid = top.clone().add(new THREE.Vector3(0, -0.17, -0.05));
@@ -846,6 +1087,19 @@ function longHair(S, j, around = 10) {
     around,
     'hair'
   );
+}
+
+/** hair pulled back into a ponytail with a band */
+function ponytail(S, j) {
+  const to = headFrame(j);
+  S.cap(to, 'hair', { rings: 6, around: 14, grow: 1.03, nape: 2.2 });
+  const root = to(new THREE.Vector3(0, 1.69, -0.125));
+  const knot = to(new THREE.Vector3(0, 1.665, -0.165));
+  const mid = knot.clone().add(new THREE.Vector3(0, -0.12, -0.03));
+  const end = knot.clone().add(new THREE.Vector3(0, -0.27, -0.02));
+  const [a, b] = ringAxes(knot, end);
+  S.tube([{ c: root, a, b, ra: 0.03, rb: 0.03 }, { c: knot, a, b, ra: 0.034, rb: 0.03 }, { c: mid, a, b, ra: 0.042, rb: 0.03 }, { c: end, a, b, ra: 0.012, rb: 0.01 }], 8, 'hair');
+  S.ball(knot, 0.026, 'band', 1.2, 0.6, 1.2);
 }
 
 /** a book or notebook held in one hand, flat against the side of the leg as the arm swings */
@@ -910,7 +1164,7 @@ function sareeClothes(S, j, seg) {
 
 // where each kind of cloth sits in the uniform shader's colour regions
 const M = (k) => [k, 3, 0];
-const ROLE_BIND = { body: [0, 1.1, 0], skirt: [0, 0.7, 0], hair: M(MARK.hair), saree: [0, 0.5, 0], border: M(MARK.border), shirt: [0, 1.1, 0], book: M(MARK.book), notebook: M(MARK.notebook), page: M(MARK.page) };
+const ROLE_BIND = { band: M(MARK.band), body: [0, 1.1, 0], skirt: [0, 0.7, 0], hair: M(MARK.hair), saree: [0, 0.5, 0], border: M(MARK.border), shirt: [0, 1.1, 0], book: M(MARK.book), notebook: M(MARK.notebook), page: M(MARK.page) };
 /** the shader's region for each vertex (a saree border alternates two colours round the hem: its woven pattern) */
 const bindOf = (r, i) => (r === 'border' && i % 3 === 0 ? M(MARK.trim) : ROLE_BIND[r]);
 function shapesToBaked(S) {
@@ -919,7 +1173,7 @@ function shapesToBaked(S) {
   const bind = new Float32Array(S.role.length * 3);
   S.role.forEach((r, i) => {
     bind.set(bindOf(r, i), i * 3);
-    if (r === 'body') bind.set(S.rest.slice(i * 3, i * 3 + 3), i * 3);
+    if (r === 'body') bind.set(S.paint?.[i] || S.rest.slice(i * 3, i * 3 + 3), i * 3);
     // (hair also carries where it sits on the head at rest, for its curls and strands)
     if (r === 'hair') {
       bind[i * 3 + 1] = 3 + S.rest[i * 3 + 1];
@@ -941,14 +1195,20 @@ function dressed(body, joints, kind, ratio, err = 0.2) {
   const P = PALETTES[kind];
   const S = new Shapes();
   const seg = ratio < 0.05 ? 10 : 16;
-  torsoTube(S, joints, ratio < 0.05 ? 10 : 16);
+  bodyTubes(S, joints, ratio < 0.05 ? 10 : 16);
   const sitting = joints.kneeL.y > joints.hips.y - 0.25;
-  if (kind === 'girl') {
-    girlClothes(S, joints, seg);
+  if (kind === 'girl' || kind === 'girlP') {
+    girlClothes(S, joints, seg, kind === 'girlP');
     if (!sitting) heldBook(S, joints, 1, 'notebook');
   } else if (P.saree) sareeClothes(S, joints, seg);
   else if (!P.teach) S.cap(headFrame(joints), 'hair', { bump: 0.06, rings: ratio < 0.05 ? 4 : 6, around: ratio < 0.05 ? 10 : 16, grow: 1.04, nape: 2.05 }); // short curly hair
   if (P.teach && !sitting) heldBook(S, joints, -1, 'book', [0.12, 0.022, 0.09]);
+  if (P.teach && sitting) {
+    // sitting down: a book open in both hands, in the lap or on the table
+    const mid = joints.handL.clone().lerp(joints.handR, 0.5).add(new THREE.Vector3(0, 0.025, 0.05));
+    S.box(mid, 0.11, 0.012, 0.08, 'page');
+    S.box(mid.clone().add(new THREE.Vector3(0, -0.014, 0)), 0.115, 0.004, 0.085, 'book');
+  }
   const extra = shapesToBaked(S);
   // the simplified body keeps only position, bindPos, normal and the index
   for (const k of Object.keys(base.attributes)) if (!['position', 'bindPos', 'normal'].includes(k)) base.deleteAttribute(k);
@@ -975,6 +1235,7 @@ export async function createPeople(scene, L, rng, P, camera) {
     const rest = cloneSkinned(gltf.scene);
     rest.updateMatrixWorld(true);
     REST = jointsOf(rest);
+    makeBodyTubes();
   }
 
   // ---------- teachers who lead the assembly (posed) ----------
@@ -1023,9 +1284,11 @@ export async function createPeople(scene, L, rng, P, camera) {
   // ---------- the student body ----------
   const N = P.students;
   const crowdKinds = ['boy', 'girl'];
-  // [kind][lod][frame] -> geometry
+  const looks = ['boy', 'girl', 'girlP']; // (girls wear their hair open or in a ponytail)
+  const lookOf = (a) => (a.kind === 'boy' ? 0 : a.alt ? 2 : 1);
+  // [look][lod][frame] -> geometry
   const frameGeo = [];
-  for (const k of crowdKinds) {
+  for (const k of looks) {
     const perLod = [];
     for (const ratio of lods) {
       const list = [];
@@ -1057,7 +1320,7 @@ export async function createPeople(scene, L, rng, P, camera) {
     scene.add(im);
     return im;
   };
-  const meshes = crowdKinds.map((k, ki) => frameGeo[ki].map((list, lod) => list.map((g, f) => instanced(g, mats[k], capOf(lod, f), lod === 0))));
+  const meshes = looks.map((k, ki) => frameGeo[ki].map((list, lod) => list.map((g, f) => instanced(g, mats[k], capOf(lod, f), lod === 0))));
   const allMeshes = meshes.flat(2);
 
   // school bags: a pack with a front pocket, worn on the back
@@ -1098,7 +1361,7 @@ export async function createPeople(scene, L, rng, P, camera) {
   const crowdAgents = [];
   for (let i = 0; i < N; i++) {
     crowdAgents.push({
-      i, teacher: false, kind: crowdKinds[i % 2], size: 0.78 + rng() * 0.14, tone: 0.84 + rng() * 0.16,
+      i, teacher: false, kind: crowdKinds[i % 2], alt: i % 2 === 1 && rng() < 0.4, size: 0.78 + rng() * 0.14, tone: 0.84 + rng() * 0.16,
       bagColor: BAG_COLORS[Math.floor(rng() * BAG_COLORS.length)], bag: false,
       off: new THREE.Vector3((rng() - 0.5) * 1.5, 0, (rng() - 0.5) * 1.5),
       active: false, path: null, seg: 0, run: false, pace: 1, wait: 0, onArrive: null, holdT: 0, y0: 0, segLen: -1,
@@ -1180,6 +1443,7 @@ export async function createPeople(scene, L, rng, P, camera) {
     release(a) {
       if (!a.active) return;
       a.active = false;
+      a.meetGrp = null;
       a.tag = null;
       a.data = null;
       a.onArrive = null;
@@ -1220,7 +1484,7 @@ export async function createPeople(scene, L, rng, P, camera) {
         const dy = a.pos.y - cam.y;
         const dz = a.pos.z - cam.z;
         const lod = dx * dx + dy * dy + dz * dz < near2 ? 0 : 1;
-        const im = meshes[a.kind === 'boy' ? 0 : 1][lod][f];
+        const im = meshes[lookOf(a)][lod][f];
         if (im.count >= im.userData.cap) continue;
         q.setFromAxisAngle(up, a.heading);
         sc.setScalar(a.size);
@@ -1253,7 +1517,7 @@ export async function createPeople(scene, L, rng, P, camera) {
   // ---------- people sitting (or standing to teach) at fixed places ----------
   // students at desks and readers: boys and girls, two levels of detail
   await breathe();
-  const sitGeo = crowdKinds.map((k) => lods.map((r) => dressed(SIT_BODY.geo, SIT_BODY.joints, k, r)));
+  const sitGeo = looks.map((k) => lods.map((r) => dressed(SIT_BODY.geo, SIT_BODY.joints, k, r)));
   await breathe();
   // teachers: sitting, and standing at the board talking (nodding frames)
   const TEACH_FRAMES = [raw[TALK], raw[TALK + 1], raw[TALK + 2], idleBody];
@@ -1275,7 +1539,7 @@ export async function createPeople(scene, L, rng, P, camera) {
     posedMeshes.set(key, im);
     return im;
   };
-  crowdKinds.forEach((k, ki) => lods.forEach((_, lod) => pm(`${k}|sit|${lod}`, sitGeo[ki][lod], mats[k], posedCap[k])));
+  looks.forEach((k, ki) => lods.forEach((_, lod) => pm(`${k}|sit|${lod}`, sitGeo[ki][lod], mats[k], posedCap[k === 'boy' ? 'boy' : 'girl'])));
   for (const k of [...MALE_TEACHERS, ...FEMALE_TEACHERS]) {
     const sex = PALETTES[k].saree ? 'f' : 'm';
     tLods.forEach((_, lod) => {
@@ -1284,6 +1548,7 @@ export async function createPeople(scene, L, rng, P, camera) {
     });
   }
   const posedAll = [...posedMeshes.values()];
+  let altN = 0;
   const groups = [];
   const posed = {
     /** a place where people sit together (a classroom, the staff room); culled as one */
@@ -1294,7 +1559,7 @@ export async function createPeople(scene, L, rng, P, camera) {
     },
     /** one seat (or teaching spot) in a group */
     slot(g, { kind, pose = 'sit', x, y, z, heading = 0, size = 1, tone = 1 }) {
-      const s = { g, kind, pose, x, y, z, heading, size, tone, on: false, phase: Math.random() * 10 };
+      const s = { g, kind, pose, x, y, z, heading, size, tone, on: false, phase: Math.random() * 10, alt: (altN++ % 5) < 2 };
       g.slots.push(s);
       return s;
     },
@@ -1323,7 +1588,7 @@ export async function createPeople(scene, L, rng, P, camera) {
             // a teacher explaining: nods now and then, otherwise stands
             const t = (elapsed * 0.5 + s.phase) % 4;
             key = `${s.kind}|talk${t < 1.5 ? Math.floor(t * 2) % 3 : 3}|${lod}`;
-          } else key = `${s.kind}|sit|${lod}`;
+          } else key = `${s.kind === 'girl' && s.alt ? 'girlP' : s.kind}|sit|${lod}`;
           const im = posedMeshes.get(key);
           if (!im || im.count >= im.userData.cap) continue;
           q.setFromAxisAngle(up, s.heading);
@@ -1352,17 +1617,17 @@ export async function createPeople(scene, L, rng, P, camera) {
   }
   const shirtGeo = (() => {
     const S = new Shapes();
-    torsoTube(S, REST, 16);
+    bodyTubes(S, REST, 16);
     const g = shapesToBaked(S);
     // each ring moves with its bone
     const n = S.role.length;
-    const per = n / TORSO_RINGS.length;
     const skel = skinnedParts(gltf.scene)[0].skeleton;
-    const bi = (b) => Math.max(0, skel.bones.findIndex((x) => x.name === 'mixamorig' + b[0].toUpperCase() + b.slice(1)));
+    const index = {};
+    for (const [k, v] of Object.entries(BONE_JOINT)) index[k] = Math.max(0, skel.bones.findIndex((x) => x.name === 'mixamorig' + v[2]));
     const si = new Uint16Array(n * 4);
     const sw = new Float32Array(n * 4);
     for (let i = 0; i < n; i++) {
-      si[i * 4] = bi(TORSO_RINGS[Math.floor(i / per)][4]);
+      si[i * 4] = index[S.bone[i]];
       sw[i * 4] = 1;
     }
     g.setAttribute('position', new THREE.Float32BufferAttribute(S.rest, 3));
@@ -1375,6 +1640,7 @@ export async function createPeople(scene, L, rng, P, camera) {
   const agents = [];
   const teacherEvery = 7;
   let nT = 0;
+  let nGirl = 0;
   for (let i = 0; i < P.walkers; i++) {
     const teacher = [1, 3, 5].includes(i % teacherEvery); // about three in seven are teachers
     const kind = teacher ? (nT++ % 2 ? MALE_TEACHERS : FEMALE_TEACHERS)[Math.floor(nT / 2) % 3] : kinds[i % kinds.length];
@@ -1386,7 +1652,9 @@ export async function createPeople(scene, L, rng, P, camera) {
         o.castShadow = true;
         o.receiveShadow = true;
         o.frustumCulled = false;
-        shells.push(o);
+        // (the robot's joint pieces aren't needed: the smooth body covers the elbows, knees and middle)
+        if (o.geometry.attributes.position.count < 14000) o.visible = false;
+        else shells.push(o);
       }
     });
     {
@@ -1402,7 +1670,7 @@ export async function createPeople(scene, L, rng, P, camera) {
     holder.visible = false;
     const size = teacher ? 0.97 + rng() * 0.05 : 0.78 + rng() * 0.12;
     holder.scale.setScalar(size);
-    attachExtras(obj, holder, kind, mats[kind]);
+    attachExtras(obj, holder, kind, mats[kind], (nGirl += kind === 'girl' ? 1 : 0) % 2 === 0);
     scene.add(holder);
     const mixer = new THREE.AnimationMixer(obj);
     const act = { walk: mixer.clipAction(clips.walk), run: mixer.clipAction(clips.run), idle: mixer.clipAction(clips.idle) };
@@ -1452,6 +1720,7 @@ export async function createPeople(scene, L, rng, P, camera) {
     },
     release(a) {
       a.active = false;
+      a.meetGrp = null;
       a.holder.visible = false;
       if (a.saree) a.saree.mesh.visible = false;
       a.tag = null;
@@ -1494,14 +1763,15 @@ export async function createPeople(scene, L, rng, P, camera) {
 
 /** an animated teacher's saree, rebuilt every frame around her moving legs (lives in her holder's frame) */
 /** hair and whatever they carry, for an animated figure: fixed to the head and hand bones so they move with them */
-function attachExtras(obj, holder, kind, mat) {
+function attachExtras(obj, holder, kind, mat, pony = false) {
   const P = PALETTES[kind];
   holder.updateMatrixWorld(true);
   const parts = [];
   const id = (p) => p;
   if (kind === 'girl') {
     const S = new Shapes();
-    longHair(S, REST, 10);
+    if (pony) ponytail(S, REST);
+    else longHair(S, REST, 10);
     parts.push(['Head', S]);
     const B = new Shapes();
     heldBook(B, REST, 1, 'notebook');

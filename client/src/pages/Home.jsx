@@ -294,13 +294,14 @@ export default function Home() {
         {watching && (
           <button
             onClick={stopWatching}
-            className={`glass absolute right-4 top-4 z-30 flex h-9 items-center gap-1.5 rounded-[11px] px-3 font-mono text-[11px] uppercase tracking-[0.12em] text-ink/85 transition-opacity duration-500 hover:text-ink sm:right-6 sm:top-6 ${exitShown ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
+            className={`glass absolute right-4 top-4 z-30 flex h-9 items-center gap-1.5 rounded-[11px] px-3 font-mono text-[11px] uppercase tracking-[0.12em] text-ink/85 hover:text-ink sm:right-6 sm:top-6 ${exitShown ? '' : 'invisible'}`}
             aria-label="Show the page again"
           >
             <span aria-hidden="true">✕</span> Exit
           </button>
         )}
-        <div className={`transition-opacity duration-500 ${watching ? 'pointer-events-none invisible opacity-0' : 'opacity-100'}`}>
+        {/* (shown and hidden at once, never faded: a busy graphics chip can hold a fade back for seconds) */}
+        <div className={watching ? 'invisible' : undefined}>
         <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(5,8,7,0.45)_0%,transparent_22%,transparent_50%,rgba(5,8,7,0.7)_100%)]" />
 
         <nav className="absolute inset-x-0 top-0 z-10 flex items-center justify-between gap-2 px-4 py-4 sm:px-8 sm:py-6">

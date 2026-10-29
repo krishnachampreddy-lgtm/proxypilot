@@ -209,8 +209,13 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell, onSto
   const WATCH2 = { x: -49.6, z: 41.4 };
   const watchman2 = posed.slot(posed.group(WATCH2.x, FEET.ground + 1, WATCH2.z, 3), { kind: 'guard', pose: 'stand', x: WATCH2.x, y: FEET.ground, z: WATCH2.z, heading: Math.atan2(DROP.x - WATCH2.x, 44.5 - WATCH2.z) });
   posed.set(watchman2, true);
+  // and a third at the buses' gate, who stops the road for them
+  const WATCH3 = { x: BX + 6.6, z: 41.9 };
+  const watchman3 = posed.slot(posed.group(WATCH3.x, FEET.ground + 1, WATCH3.z, 3), { kind: 'guard', pose: 'stand', x: WATCH3.x, y: FEET.ground, z: WATCH3.z, heading: Math.atan2(BX - WATCH3.x, 46 - WATCH3.z) });
+  posed.set(watchman3, true);
   let signalT = 0;
   let signal2T = 0;
+  let signal3T = 0;
   const asmGroup = posed.group(0, FEET.ground + 1, -5, 28);
   const assemblyTeachers = CLASSROOMS.map((_, c) => posed.slot(asmGroup, { kind: [...MALE_TEACHERS, ...FEMALE_TEACHERS][(c * 7 + 5) % 6], pose: 'stand', x: lineX(c), y: FEET.ground, z: -8.78, heading: Math.PI }));
   const reserveSeat = (cls, kind) => {
@@ -479,8 +484,10 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell, onSto
   const inBuilding = (p) => p.y > 0.3 || (Math.abs(p.x) < 36 && p.z > -34 && p.z < 8 && (p.z < -25 || Math.abs(p.x) > 27));
   /** change someone's plan: at once if they're outside, or as soon as they come out if they're still in the building */
   const reroute = (a, fn) => {
-    if (inBuilding(a.pos)) a.onArrive = (b) => fn(b);
-    else fn(a);
+    if (inBuilding(a.pos)) {
+      a.onArrive = (b) => fn(b);
+      a.waitAfter = 0; // (and no standing about when they get there)
+    } else fn(a);
   };
 
   const gathering = () => minutes >= TIMES.assemblyBell && minutes < TIMES.toClass;
@@ -839,7 +846,7 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell, onSto
       const u = (rng() + rng() + rng()) / 3;
       // (the campus clock runs fast in the morning, so if everyone came in by the front gate the drive would be
       // packed solid: most come in by the side gate behind the library and are simply found at their desks)
-      list.push({ t: hm(7, 13.5) + u * 34, n, unseen: rng() < 0.62 });
+      list.push({ t: hm(7, 13.5) + u * 30, n, unseen: rng() < 0.62 }); // (in by 7:44, so nobody is still on the stairs when the bell goes)
     }
     walkSchedule = list.filter((g) => g.t >= fromMinute).sort((x, y) => y.t - x.t); // popped from the end, earliest first
     if (!jumping) return 0;
@@ -930,7 +937,7 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell, onSto
       }, 1e6);
     // the teacher gets up from the staff room table and walks out to the car
     // (past the fountain on its east side, between the palms and the hedge along the drive)
-    const t = outOfStaffRoom([V(-20, 8.4), V(-11.4, 12.6), V(-10.6, 27.5), V(CAR_SLOTS[i] + 1.4, 33.6), V(CAR_SLOTS[i] + 1.4, 36.2)], {
+    const t = outOfStaffRoom([V(-20, 8.4), V(-7.7, 8.4), V(-7.9, 11.2), V(-8.1, 27.0), V(-10.6, 28.6), V(CAR_SLOTS[i] + 1.4, 33.6), V(CAR_SLOTS[i] + 1.4, 36.2)], {
       pace: 1.2,
       onArrive: (a) => {
         release(a);
@@ -1026,11 +1033,12 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell, onSto
     const inside = a.pos.z < 43;
     // from the bus bay, back down the aisle first (never between the buses)
     const fromBay = a.pos.x > 3 && a.pos.z > 22 && a.pos.z < 40 ? [V(3.6, a.pos.z)] : [];
-    // (groups spread across the drive and the walkers' lane rather than all treading one line)
-    const lane = (rng() - 0.5) * 3;
-    // (out through the whole width of the walkers' side of the gateway, then each group finds its own line along
+    // (groups spread across the drive and the walkers' lane — those turning west keep to its west side, those turning
+    // east to its east side, so the two streams never cross in the gateway — then each group finds its own line along
     // the footpath, rather than everyone treading one spot)
-    return [...from, ...fromBay, ...(inside ? [V(-1.9 + lane, Math.max(30, Math.min(a.pos.z, 40))), V(-2.7 + lane * 0.8, 43.2)] : []), SQ(side * (2.6 + rng() * 2.2), 45.1 + rng() * 0.7, FEET.ground, 0.6), SQ(roadEnd(side), 45.1 + rng() * 0.7, FEET.ground, 0.6)];
+    const u = rng() * 2 - 1;
+    const west = side < 0;
+    return [...from, ...fromBay, ...(inside ? [V((west ? -3.1 : -0.95) + u * 0.75, Math.max(30, Math.min(a.pos.z, 40))), V((west ? -4.6 : -1.75) + u * (west ? 1.1 : 0.45), 43.2)] : []), SQ(side * (2.6 + rng() * 2.2), 45.1 + rng() * 0.7, FEET.ground, 0.6), SQ(roadEnd(side), 45.1 + rng() * 0.7, FEET.ground, 0.6)];
   };
   const walkHome = (a, from = [], side = rng() < 0.5 ? -1 : 1) => {
     a.tag = 'walkHome';
@@ -1399,7 +1407,7 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell, onSto
       // games practice: football on the pitch, basketball, and a few running laps of the track
       playFootball(8);
       basketball(6);
-      cricket();
+      cricket(fresh);
       tennis();
       for (let k = 0; k < 8; k++) {
         const lapAt = Math.floor((k * trackLap.length) / 8);
@@ -1428,7 +1436,7 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell, onSto
       if (!fresh) {
         const a = crowd.spawn([trackLap[lapAt]], { jitterStart: false, tag: 'pe' });
         if (a) {
-          a.data = { cls };
+          a.data = { cls, toTrack: true };
           jog(a, (lapAt + 1) % trackLap.length);
         }
         continue;
@@ -1436,7 +1444,10 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell, onSto
       soon(
         delay + k * 0.55,
         () => {
-          const r = leaveClass(cls, { pace: 1.25, tag: 'pe' }, (b) => route(b, [...TO_TRACK, trackLap[lapAt]], { pace: 1.3, onArrive: (c) => c.tag === 'pe' && jog(c, (lapAt + 1) % trackLap.length) }));
+          const r = leaveClass(cls, { pace: 1.25, tag: 'pe' }, (b) => {
+            if (b.data) b.data.toTrack = true;
+            route(b, [...TO_TRACK, trackLap[lapAt]], { pace: 1.3, onArrive: (c) => c.tag === 'pe' && jog(c, (lapAt + 1) % trackLap.length) });
+          });
           if (r && r !== 'empty') r.data = { ...(r.data || {}), cls };
           return r === 'empty' ? false : r; // still on the way up from assembly: try again shortly
         },
@@ -1450,9 +1461,17 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell, onSto
     for (const a of crowd.agents) {
       if (!a.active || a.tag !== 'pe') continue;
       if (a.data?.cls >= 0) {
+        const cls = a.data.cls;
         a.tag = 'toClass';
-        goToClass(a, a.data.cls, BACK_FROM_TRACK, { pace: 1.4 });
-      } else walkHome(a, [...BACK_FROM_TRACK.slice(0, -1), V(12, 12.2), V(3.2, 12.6)]); // (along the path from the bus bay, outside the hedge)
+        if (!a.data.toTrack) {
+          // still on the way down from their classroom when the bell goes: once they're out, straight back up
+          a.onArrive = (b) => b.active && goToClass(b, cls, [], { pace: 1.4 });
+          a.waitAfter = 0;
+        } else if (a.pos.x < 58 && a.path && a.seg < a.path.length) {
+          // still on the way out to the track: back the way they came
+          goToClass(a, cls, a.path.slice(0, a.seg).reverse(), { pace: 1.4 });
+        } else goToClass(a, cls, BACK_FROM_TRACK, { pace: 1.4 });
+      } else walkHome(a, [...BACK_FROM_TRACK.slice(0, -1), V(12, 12.8), V(3.2, 12.8)]); // (along the path from the bus bay, outside the hedge)
     }
     sendIn((a) => a.tag === 'peTeacher');
   };
@@ -1486,10 +1505,11 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell, onSto
         route(c, [V(nx + 0.45, -66.5)], { pace: 0.9, wait: 1.2, onArrive: (d) => d.tag === 'cricket' && bowlIn(d, nx) });
       },
     });
-  const cricket = () => {
+  const cricket = (fresh = true) => {
     NETS.forEach((nx, k) => {
-      later(1.5 + k * 3, () => {
-        const via = [...NETS_WAY, V(nx + 0.6, -65.4)];
+      later(fresh ? 1.5 + k * 3 : 0.2 + k * 0.3, () => {
+        // (jumped in once practice has begun: they're already at the nets)
+        const via = fresh ? [...NETS_WAY, V(nx + 0.6, -65.4)] : [V(nx + 0.6, -67.6)];
         const bat = pool.spawn([...via, V(nx, -85)], { sport: 'bat', tag: 'cricket', pace: 1.1 });
         if (bat) bat.onArrive = (b) => b.tag === 'cricket' && route(b, [], { wait: 1e9, face: 0 });
         cricketBalls[k].bat = bat;
@@ -1715,6 +1735,7 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell, onSto
         // straight back to class instead
         if (m.path && m.seg < m.path.length) {
           m.onArrive = back(k);
+          m.waitAfter = 0; // (heading for a chat with friends: when they get there they go straight on, no standing about)
           inside.add(m);
         }
       });
@@ -1891,6 +1912,8 @@ export function createSim({ people, vehicles, grounds, scene, rng, onBell, onSto
       watchman.pose = signalT > 0 ? 'point' : 'stand';
       signal2T = DROPPERS.some((d) => d.active && d.obj.visible && Math.abs(d.obj.position.x - DROP.x) < 6 && d.obj.position.z > 42 && d.obj.position.z < 48) ? 1.4 : signal2T - dt;
       watchman2.pose = signal2T > 0 ? 'point' : 'stand';
+      signal3T = F.buses.some((b) => b.active && b.obj.visible && Math.abs(b.obj.position.x - BX) < 7 && b.obj.position.z > 40.5 && b.obj.position.z < 49) ? 1.4 : signal3T - dt;
+      watchman3.pose = signal3T > 0 ? 'point' : 'stand';
       officeT += dt;
       if (officeT > 0.5) {
         officeT = 0;

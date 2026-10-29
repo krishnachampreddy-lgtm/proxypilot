@@ -57,6 +57,8 @@ function frameFor(w) {
   return { x: 0, y: -0.2 };
 }
 
+const CENTRED = { x: 0, y: 0 };
+
 function BellIcon({ className = '' }) {
   return (
     <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -207,6 +209,57 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stop]);
 
+  // "Our school": the campus alone, full screen — every button and card out of the way (Esc, or the small exit
+  // button that shows when you move, brings them back)
+  const [watching, setWatching] = useState(false);
+  const [exitShown, setExitShown] = useState(true);
+  const exitTimer = useRef(null);
+  const startWatching = () => {
+    if (stop !== null) endTour();
+    if (inside) lookOutside();
+    window.scrollTo(0, 0);
+    setWatching(true);
+    try {
+      document.documentElement.requestFullscreen?.().catch(() => {});
+    } catch {
+      /* no full screen here (an iPhone): the page alone does it */
+    }
+  };
+  const stopWatching = () => {
+    setWatching(false);
+    try {
+      if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
+    } catch {
+      /* already out */
+    }
+  };
+  useEffect(() => {
+    if (!watching) return;
+    const show = () => {
+      setExitShown(true);
+      clearTimeout(exitTimer.current);
+      exitTimer.current = setTimeout(() => setExitShown(false), 2500);
+    };
+    const onKey = (e) => e.key === 'Escape' && stopWatching();
+    // (leaving full screen — the browser's own Esc — ends it too)
+    const onFull = () => !document.fullscreenElement && setWatching(false);
+    show();
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('pointermove', show);
+    window.addEventListener('pointerdown', show);
+    window.addEventListener('keydown', onKey);
+    document.addEventListener('fullscreenchange', onFull);
+    return () => {
+      document.body.style.overflow = overflow;
+      clearTimeout(exitTimer.current);
+      window.removeEventListener('pointermove', show);
+      window.removeEventListener('pointerdown', show);
+      window.removeEventListener('keydown', onKey);
+      document.removeEventListener('fullscreenchange', onFull);
+    };
+  }, [watching]);
+
   const s = stop !== null ? STOPS[stop] : null;
   const backdrop = startAt.current >= 17 * 60 ? 'evening' : 'morning';
 
@@ -227,7 +280,7 @@ export default function Home() {
           onStory={onStory}
           onReady={(ok) => setLive(ok)}
           onInside={(on) => setInside((r) => (on ? r || 'room' : null))}
-          frameShift={frame}
+          frameShift={watching ? CENTRED : frame}
         />
         {progress > 0 && progress < 1 && (
           <div className="pointer-events-none absolute left-1/2 top-20 z-10 -translate-x-1/2 sm:top-24">
@@ -238,6 +291,16 @@ export default function Home() {
             </div>
           </div>
         )}
+        {watching && (
+          <button
+            onClick={stopWatching}
+            className={`glass absolute right-4 top-4 z-30 flex h-9 items-center gap-1.5 rounded-[11px] px-3 font-mono text-[11px] uppercase tracking-[0.12em] text-ink/85 transition-opacity duration-500 hover:text-ink sm:right-6 sm:top-6 ${exitShown ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
+            aria-label="Show the page again"
+          >
+            <span aria-hidden="true">✕</span> Exit
+          </button>
+        )}
+        <div className={`transition-opacity duration-500 ${watching ? 'pointer-events-none invisible opacity-0' : 'opacity-100'}`}>
         <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(5,8,7,0.45)_0%,transparent_22%,transparent_50%,rgba(5,8,7,0.7)_100%)]" />
 
         <nav className="absolute inset-x-0 top-0 z-10 flex items-center justify-between gap-2 px-4 py-4 sm:px-8 sm:py-6">
@@ -253,8 +316,8 @@ export default function Home() {
           </div>
         </nav>
 
-        {/* the campus clock: what time it is at the school and what's happening */}
-        {live && (
+        {/* the campus clock: what time it is at the school and what's happening (out of the way during the tour) */}
+        {live && stop === null && (
           <div className="absolute left-4 top-[4.4rem] z-10 sm:left-auto sm:right-8 sm:top-[5.6rem] sm:w-[380px]">
             <div className="glass rounded-[14px] p-3 sm:p-4">
               <div className="flex items-center justify-between gap-3">
@@ -388,6 +451,7 @@ export default function Home() {
                 <Action to="/login#demo" primary title="Try the demo" sub="One tap · no sign-up" />
                 <Action to="/login" title="Sign in with Gmail" sub="Teacher · HOD · Student" />
                 <Action onClick={() => goTo(0)} title="Take the campus tour" sub={`Guided · ${STOPS.length} stops`} />
+                <Action onClick={startWatching} title="Our school" sub="Full screen · just the campus" />
               </div>
             </div>
           )}
@@ -396,6 +460,7 @@ export default function Home() {
         <p className="pointer-events-none absolute bottom-8 right-8 z-10 hidden font-mono text-[10px] uppercase tracking-[0.18em] text-ink/60 lg:block">
           Drag to look around · the camera follows the day ↓
         </p>
+        </div>
       </section>
 
       {/* ---------- how it works ---------- */}

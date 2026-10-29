@@ -63,11 +63,24 @@ function house(B, M, rng, x, z, facing, { detail = true, shop = false } = {}) {
       put(w * 0.6, 0.9, 0.05, 'green', 0, y0 + 0.12, -1.08);
     }
   }
-  // side windows
+  // windows down both sides and across the back too, each under its chajja (seen from the campus, the backs of
+  // the houses on the main road face the school)
   if (detail) {
     for (let f = 0; f < floors; f++) {
-      const [px, pz] = at(w / 2 + 0.02, d * 0.6);
-      B.box(0.04, 1.1, 1.1, 'glassTown', px, 0.4 + f * FH + 1.0, pz, { ry });
+      const y0 = 0.4 + f * FH;
+      for (const sd of [-1, 1]) {
+        for (const dv of [0.35, 0.72]) {
+          const [px, pz] = at(sd * (w / 2 + 0.02), d * dv);
+          B.box(0.04, 1.2, 1.1, 'glassTown', px, y0 + 0.95, pz, { ry });
+          const [cx, cz] = at(sd * (w / 2 + 0.22), d * dv);
+          B.box(0.45, 0.08, 1.4, trim, cx, y0 + 2.3, cz, { ry });
+        }
+      }
+      for (let i = 0; i < cols; i++) {
+        const u = -w / 2 + (w / cols) * (i + 0.5);
+        put(1.3, 1.25, 0.04, 'glassTown', u, y0 + 0.9, d + 0.02);
+        put(1.6, 0.08, 0.45, trim, u, y0 + 2.3, d + 0.24);
+      }
     }
   }
   // a stair room on the terrace, sometimes a pergola

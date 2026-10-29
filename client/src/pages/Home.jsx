@@ -291,6 +291,14 @@ export default function Home() {
             </div>
           </div>
         )}
+        {/* while watching: just the time and which period it is, small in the corner */}
+        {watching && live && (
+          <div className="glass pointer-events-none absolute left-4 top-4 z-30 flex h-9 items-center gap-2.5 rounded-[11px] px-3 sm:left-6 sm:top-6" role="status">
+            <span className="h-1.5 w-1.5 rounded-full bg-sage shadow-[0_0_8px_2px_rgba(98,211,155,0.55)]" />
+            <span className="font-mono text-sm tabular-nums leading-none text-ink">{clockLabel(clock.m)}</span>
+            <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-brass">{phaseLabel(clock.m)}</span>
+          </div>
+        )}
         {watching && (
           <button
             onClick={stopWatching}
